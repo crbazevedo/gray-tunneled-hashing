@@ -1,2 +1,76 @@
-# gray-tunneled-hashing
-Scripts e apps para experimentação e validação do teorema e do algoritmo Gray‑Tunneled Hashing
+# Gray-Tunneled Hashing
+
+This repository hosts all source code, scripts, applications, and experiments for prototyping and validating a theoretical result about Gray-Tunneled Hashing, and implementing a Gray-Tunneled Hashing algorithm that can be plugged into any binary vector DB / ANN index (Hamming distance).
+
+## What is Gray-Tunneled Hashing?
+
+Gray-Tunneled Hashing is a novel hashing approach designed for binary vector databases and approximate nearest neighbor (ANN) search using Hamming distance. The algorithm aims to preserve distance relationships in the original embedding space while mapping to binary codes, enabling efficient similarity search in high-dimensional spaces.
+
+## Project Structure
+
+- `src/gray_tunneled_hashing/` - Main Python package with algorithms, data generators, and evaluation metrics
+- `tests/` - Unit and integration tests
+- `scripts/` - Utility scripts for running experiments
+- `apps/` - Demo applications and CLI tools
+- `experiments/` - Experiment configurations, notebooks, and results
+- `project_management/` - Project planning, backlog, and documentation
+
+## Requirements
+
+- Python >= 3.10
+
+## Quickstart
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/crbazevedo/gray-tunneled-hashing.git
+   cd gray-tunneled-hashing
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install -e .
+   ```
+
+### Running Tests
+
+Run the test suite:
+```bash
+pytest
+```
+
+For quiet output:
+```bash
+pytest -q
+```
+
+### Running the First Synthetic Experiment
+
+Run the synthetic experiment script:
+```bash
+python scripts/run_synthetic_experiment.py
+```
+
+This will generate synthetic embeddings, run the hashing algorithm, and print summary metrics.
+
+### Running the Demo CLI
+
+Run the demo CLI application:
+```bash
+python apps/demo_cli.py
+```
+
+Or with custom parameters:
+```bash
+python apps/demo_cli.py --n-points 100 --dim 64
+```
+
+## Development
+
+See `project_management/instructions/CONTRIBUTING.md` for contribution guidelines and `project_management/instructions/DEVELOPMENT_NOTES.md` for design decisions.
+
+## License
+
+[License information to be added]
