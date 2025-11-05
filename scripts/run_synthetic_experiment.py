@@ -28,6 +28,65 @@ def compute_permutation_distance(pi1: np.ndarray, pi2: np.ndarray) -> float:
     return np.mean(pi1 != pi2)
 
 
+def generate_gray_code_sequence(n_bits: int) -> np.ndarray:
+    """
+    Generate Gray code sequence for n_bits.
+    
+    Gray code is a binary numeral system where two successive values differ
+    in only one bit position. This preserves locality.
+    
+    Returns array of vertex indices in Gray-code order.
+    """
+    if n_bits == 0:
+        return np.array([0], dtype=np.int32)
+    if n_bits == 1:
+        return np.array([0, 1], dtype=np.int32)
+    
+    # Recursive Gray code generation
+    gray_n_minus_1 = generate_gray_code_sequence(n_bits - 1)
+    gray_n = np.concatenate([
+        gray_n_minus_1,
+        gray_n_minus_1[::-1] + (2 ** (n_bits - 1))
+    ])
+    return gray_n.astype(np.int32)
+
+
+def create_gray_code_baseline(embeddings: np.ndarray, n_bits: int) -> np.ndarray:
+    """
+    Create baseline assignment using Gray-code ordering.
+    
+    Strategy: Sort embeddings by first principal component, then assign
+    in Gray-code order to preserve locality.
+    
+    Args:
+        embeddings: Array of shape (N, dim) where N = 2**n_bits
+        n_bits: Hypercube dimension
+        
+    Returns:
+        Permutation array pi of shape (N,) where pi[u] is embedding index
+        assigned to vertex u
+    """
+    N = embeddings.shape[0]
+    if N != 2 ** n_bits:
+        raise ValueError(f"N must be 2**n_bits, got N={N}, n_bits={n_bits}")
+    
+    # Sort embeddings by first principal component
+    # For simplicity, use first coordinate (or could use PCA)
+    embedding_scores = embeddings[:, 0]  # Use first dimension as proxy
+    sorted_indices = np.argsort(embedding_scores)
+    
+    # Get Gray-code vertex ordering
+    gray_sequence = generate_gray_code_sequence(n_bits)
+    
+    # Create permutation: pi[u] = embedding index assigned to vertex u
+    # where u is in Gray-code order
+    pi = np.zeros(N, dtype=np.int32)
+    for i, vertex_idx in enumerate(gray_sequence):
+        pi[vertex_idx] = sorted_indices[i]
+    
+    return pi
+
+
 def run_experiment(
     n_bits: int,
     dim: int,
@@ -105,6 +164,14 @@ def run_experiment(
     print(f"  ✓ Identity baseline cost: {identity_cost:.6f}")
     print(f"  ✓ Distance to π*: {identity_dist_to_star:.4f}")
     
+    # Step 4b: Baseline - Gray-code ordering
+    print("\nStep 4b: Computing baseline (Gray-code ordering)...")
+    pi_gray = create_gray_code_baseline(w, n_bits)
+    gray_cost = qap_cost(pi_gray, D, edges)
+    gray_dist_to_star = compute_permutation_distance(pi_gray, pi_star)
+    print(f"  ✓ Gray-code baseline cost: {gray_cost:.6f}")
+    print(f"  ✓ Distance to π*: {gray_dist_to_star:.4f}")
+    
     # Step 5: Gray-Tunneled Hashing
     print("\nStep 5: Running Gray-Tunneled Hashing optimization...")
     hasher = GrayTunneledHasher(
@@ -133,17 +200,21 @@ def run_experiment(
     print(f"\nCosts:")
     print(f"  Random baseline:    {baseline_cost:12.6f}")
     print(f"  Identity baseline:  {identity_cost:12.6f}")
+    print(f"  Gray-code baseline: {gray_cost:12.6f}")
     print(f"  Gray-Tunneled:      {gt_cost:12.6f}")
     
     print(f"\nRelative improvements:")
     improvement_vs_random = (baseline_cost - gt_cost) / baseline_cost * 100
     improvement_vs_identity = (identity_cost - gt_cost) / identity_cost * 100
-    print(f"  vs Random:   {improvement_vs_random:+7.2f}%")
-    print(f"  vs Identity: {improvement_vs_identity:+7.2f}%")
+    improvement_vs_gray = (gray_cost - gt_cost) / gray_cost * 100
+    print(f"  vs Random:      {improvement_vs_random:+7.2f}%")
+    print(f"  vs Identity:    {improvement_vs_identity:+7.2f}%")
+    print(f"  vs Gray-code:   {improvement_vs_gray:+7.2f}%")
     
     print(f"\nDistance to planted π* (fraction of mismatched vertices):")
     print(f"  Random baseline:    {baseline_dist_to_star:.4f}")
     print(f"  Identity baseline:  {identity_dist_to_star:.4f}")
+    print(f"  Gray-code baseline: {gray_dist_to_star:.4f}")
     print(f"  Gray-Tunneled:      {gt_dist_to_star:.4f}")
     
     print(f"\nCost history (first 5, last 5):")

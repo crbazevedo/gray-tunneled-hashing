@@ -4,6 +4,35 @@
 
 This document summarizes initial numerical results from Sprint 1 implementation of Gray-Tunneled Hashing on synthetic planted instances.
 
+**For detailed hypothesis testing and validation analysis, see `HYPOTHESES_AND_VALIDATION.md`.**
+
+## Baseline Rationale
+
+### Why Identity is a Good Baseline
+
+In the planted model, we generate:
+- Ideal embeddings `φ(u)` for each vertex `u`
+- Noisy embeddings `w[i] = φ(vertex_i) + noise_i` where `π* = identity`
+
+Therefore:
+1. **Identity is the planted solution**: By construction, `π* = identity` is the ground truth
+2. **Theoretical expectation**: Under margin conditions (low noise), identity should be optimal
+3. **Practical benchmark**: If we can't match identity on synthetic data, we won't on real data
+
+**However**, identity may not always be optimal because:
+- High noise can break the planted structure
+- Multiple equivalent-cost permutations may exist (symmetries)
+- Numerical precision issues
+
+### Better Baselines
+
+We compare against:
+1. **Random baseline**: Uniform random permutation (no structure)
+2. **Identity baseline**: The planted solution (optimal for low noise)
+3. **Gray-code baseline**: Sort embeddings by first PC, assign in Gray-code order (preserves locality)
+
+The Gray-code baseline is a practical heuristic that respects hypercube locality without optimization.
+
 ## Experiment Setup
 
 ### Parameters Tested
@@ -17,10 +46,11 @@ This document summarizes initial numerical results from Sprint 1 implementation 
 
 ### Baseline Comparisons
 
-1. **Random baseline**: Random permutation of embeddings to vertices
-2. **Identity baseline**: Identity permutation (pi[i] = i)
+1. **Random baseline**: Random permutation of embeddings to vertices (no structure)
+2. **Identity baseline**: Identity permutation (pi[i] = i) - the planted solution
+3. **Gray-code baseline**: Sort embeddings by first PC, assign in Gray-code order (locality-preserving heuristic)
 
-For planted model, identity permutation corresponds to the ideal assignment where φ[i] is assigned to vertex i.
+See `HYPOTHESES_AND_VALIDATION.md` for detailed explanation of why identity is a good baseline.
 
 ## Results
 
