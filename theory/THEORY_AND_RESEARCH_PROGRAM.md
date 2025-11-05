@@ -19,6 +19,25 @@ Gray-Tunneled Hashing is a novel approach to binary vector encoding that treats 
 
 The assignment of embeddings to hypercube vertices (binary codes) matters critically. If neighboring codevectors are mapped to Hamming-nearby labels, a single bit flip or small channel error results in limited distortion. This was known in classical signal coding but is underutilized in modern large-scale embedding systems.
 
+**Visualizing the Assignment Problem**:
+
+```
+Embedding Space (ℝᵈ)          Hypercube Qₙ (Binary Codes)
+─────────────────────          ────────────────────────────
+    w₁ ●                       000 ── 001
+       │                        │     │
+    w₂ ● ────── semantic ────── 010 ── 011   Hamming-1 edges
+       │   distance              │     │
+    w₃ ●                       100 ── 101
+       │                        │     │
+    w₄ ●                       110 ── 111
+       
+Goal: Find permutation π such that
+  Hamming-1 neighbors ↔ Semantically similar embeddings
+```
+
+The challenge is finding the optimal mapping $\pi: \{w_i\} \to V(Q_n)$ where vertices connected by hypercube edges (Hamming distance 1) host embeddings that are semantically close. This creates a Quadratic Assignment Problem where we minimize the cost of "flows" along hypercube edges.
+
 ## Theoretical Framework
 
 ### 1. Problem Formulation
@@ -39,6 +58,28 @@ where:
 - $d_{ij} = \|w_i - w_j\|^2$ is the semantic distance matrix
 - The goal is to minimize $f(\pi)$
 
+**Hypercube Structure and Cost Accumulation**:
+
+For a 3D hypercube ($Q_3$), the structure and cost flow looks like:
+
+```
+    011 ──── 111
+    │  ╲  ╱  │
+    │   ╲╱   │
+    001 ──── 101
+    │   ╱╲   │
+    │  ╱  ╲  │
+    010 ──── 110
+    │  ╲  ╱  │
+    │   ╲╱   │
+    000 ──── 100
+
+Each edge (u,v) contributes cost d_{π(u)π(v)} to f(π)
+Total cost = sum over all 12 edges (for Q₃)
+```
+
+The QAP formulation captures the fact that we want embeddings assigned to adjacent vertices (Hamming-1 neighbors) to be semantically similar. Each hypercube edge $(u,v)$ contributes a cost $d_{\pi(u)\,\pi(v)}$ based on the semantic distance between the embeddings assigned to those vertices. The total cost accumulates over all hypercube edges.
+
 This is a Quadratic Assignment Problem (QAP) with:
 - **Locations**: Hypercube vertices
 - **Facilities**: Embedding indices
@@ -49,6 +90,39 @@ This is a Quadratic Assignment Problem (QAP) with:
 
 **Key Result**: Under 2-swap neighborhood (transpositions of two vertices), the QAP objective defines an **elementary landscape**.
 
+**The 2-Swap Operator**:
+
+A 2-swap transposes the embeddings assigned to two hypercube vertices:
+
+```
+Before 2-swap (π):
+    ┌─────┐
+    │ 000 │ → w₃
+    └─────┘
+         ╲
+          ╲ edge cost: d(w₃, w₇)
+           ╲
+    ┌─────┐
+    │ 001 │ → w₇
+    └─────┘
+
+After 2-swap (π' = π ∘ (000,001)):
+    ┌─────┐
+    │ 000 │ → w₇  (swapped!)
+    └─────┘
+         ╲
+          ╲ edge cost: d(w₇, w₃) = d(w₃, w₇)
+           ╲
+    ┌─────┐
+    │ 001 │ → w₃  (swapped!)
+    └─────┘
+
+Note: This particular edge cost stays the same, but other 
+edges connected to these vertices change, affecting f(π).
+```
+
+The 2-swap neighborhood contains $\binom{N}{2}$ neighbors for each permutation $\pi$. Each swap potentially changes the cost of edges incident to the swapped vertices.
+
 **Theorem**: For the hypercube QAP under 2-swap moves:
 \[
 \mathbb{E}[f(\pi') \mid \pi] = \left(1 - \frac{4}{N}\right) f(\pi) + \frac{4}{N}\,\bar f
@@ -58,6 +132,29 @@ where:
 - $\pi'$ is a uniformly random 2-swap neighbor of $\pi$
 - $\bar f$ is the global mean of $f$ over all permutations
 - $\lambda = 4/N$ is the relaxation rate
+
+**Elementary Landscape Drift**:
+
+The theorem implies that the expected value after a random 2-swap is a weighted average between the current value and the global mean:
+
+```
+Expected objective value after 2-swap:
+
+    f(π) ────────┐
+                  │
+                  ▼
+    E[f(π')] = (1-λ)·f(π) + λ·f̄
+                  │
+                  │  where λ = 4/N
+                  │
+                  ▼
+    ──────────── f̄ (global mean)
+    
+As N grows, λ = 4/N → 0, so single steps have 
+limited pull toward the mean (slow mixing).
+```
+
+This drift property is the defining characteristic of an elementary landscape: the neighbor average is an affine function of the current value, creating a predictable global structure.
 
 **Implications**:
 - Random walks under 2-swap quickly mix around the global average
@@ -75,6 +172,34 @@ where:
 **Ideal Pseudo-Gray Configuration**: A map $\phi: V \to \mathbb{R}^d$ such that:
 - If $\|u-v\|_H = 1$ (Hamming-1 neighbors), then $\|\phi(u) - \phi(v)\|$ is small
 - If $\|u-v\|_H \ge 2$, distances are typically larger with positive margin
+
+**Pseudo-Gray Arrangement**:
+
+In an ideal pseudo-Gray configuration, embeddings are arranged so that hypercube neighbors correspond to semantically similar points:
+
+```
+Embedding Space (semantic geometry)    Hypercube (code geometry)
+────────────────────────────────      ────────────────────────
+                                       
+    φ(000) ●                          000 ── 001
+       │   ╱                           │   ╱
+       │  ╱ small distance             │  ╱  Hamming-1
+       │ ╱  (≤ δ₁)                     │ ╱
+    φ(001) ● ──────● φ(011)           001 ── 011
+       │           │                    │     │
+       │  larger   │                    │     │
+       │  distance │                    │     │
+       │  (≥ δ₂)   │                    │     │
+    φ(010) ●       ● φ(111)           010 ── 111
+       │           │                    │     │
+       │           │                    │     │
+    φ(100) ● ──────● φ(110)           100 ── 110
+
+Key property: Hamming-1 neighbors → small semantic distance
+             Hamming-2+ neighbors → larger semantic distance (margin)
+```
+
+This creates a smooth embedding of the hypercube where local moves in code space (bit flips) correspond to small moves in semantic space. The planted model assumes such an ideal configuration exists, with observed embeddings being noisy versions: $w_{\pi^*(u)} = \phi(u) + \xi_u$.
 
 **Planted Structure**: There exists a planted permutation $\pi^*$ such that:
 \[
@@ -103,10 +228,71 @@ where $\xi_u$ are independent subgaussian noise vectors with variance proxy $\si
 3. Solve the restricted QAP for reassigning $I_B$ to $B$
 4. Apply the reassignment if it improves the global objective
 
+**Block Move Operation**:
+
+A block move reoptimizes the assignment within a small subset of vertices:
+
+```
+Before block move on B = {000, 001, 010, 011}:
+
+    ┌─────┐
+    │ 000 │ → w₅  ────┐
+    └─────┘           │
+    ┌─────┐           │ Block B
+    │ 001 │ → w₂  ────┤ (2×2 subcube)
+    └─────┘           │
+    ┌─────┐           │
+    │ 010 │ → w₈  ────┘
+    └─────┘
+    ┌─────┐
+    │ 011 │ → w₁
+    └─────┘
+
+Solve restricted QAP: reassign {w₅, w₂, w₈, w₁} to {000, 001, 010, 011}
+to minimize cost of edges within B and between B and V\B
+
+After block reoptimization:
+
+    ┌─────┐
+    │ 000 │ → w₁  (better assignment)
+    └─────┘
+    ┌─────┐
+    │ 001 │ → w₂  (kept)
+    └─────┘
+    ┌─────┐
+    │ 010 │ → w₅  (rearranged)
+    └─────┘
+    ┌─────┐
+    │ 011 │ → w₈  (rearranged)
+    └─────┘
+
+This can escape local minima that 2-swap alone cannot reach.
+```
+
 **Block Types**:
-- **Cluster-based**: Partition embeddings into clusters, assign cluster vertices to blocks
-- **Geometric subcubes**: Choose subsets forming small subcubes of dimension $m$ ($|B| = 2^m$)
-- **Hybrid**: Clusters with geometrically close vertices on hypercube
+
+1. **Geometric subcubes**: Choose subsets forming small subcubes of dimension $m$ ($|B| = 2^m$)
+
+```
+Example: 2×2 subcube in Q₃
+    ┌─────┬─────┐
+    │ 000 │ 001 │ ← Block B
+    ├─────┼─────┤
+    │ 010 │ 011 │
+    └─────┴─────┘
+```
+
+2. **Cluster-based**: Partition embeddings into clusters, assign cluster vertices to blocks
+
+```
+Embeddings cluster in semantic space:
+    Cluster 1: {w₁, w₃, w₇}
+    Cluster 2: {w₂, w₄, w₆}
+    
+Block = vertices assigned to Cluster 1 embeddings
+```
+
+3. **Hybrid**: Clusters with geometrically close vertices on hypercube
 
 **Statistical Tunneling Conjecture**:
 
@@ -121,9 +307,55 @@ Under the planted pseudo-Gray model with suitable conditions, there exist consta
 
 **Intuition**: Deep bad local minima are rare in typical planted instances once we allow block moves. Any persistent local minimum is near-globally optimal.
 
+**The Tunneling Effect**:
+
+Block moves enable "tunneling" through barriers that trap 2-swap local search:
+
+```
+Objective Landscape f(π):
+
+    f(π)
+    │
+    │     ● Local minimum (traps 2-swap)
+    │    ╱╲
+    │   ╱  ╲───────────┐
+    │  ╱    ╲          │ Barrier
+    │ ╱      ╲          │
+    │╱        ╲─────────┘
+    │          ╲
+    │           ╲
+    │            ╲
+    │             ╲
+    │              ● Global minimum (π*)
+    │
+    └───────────────────────────────────→ Permutation space
+    
+2-swap path:    ────→ gets stuck at local minimum
+Block move path: ────→ tunnels through barrier
+```
+
+The key insight is that block moves can simultaneously rearrange multiple vertices, allowing transitions that would require an exponentially long sequence of 2-swaps. In the planted model, if an assignment is far from $\pi^*$, there exists a block that can improve it, preventing deep bad local minima from persisting.
+
 ## Algorithmic Framework: Gray-Tunneled Hashing
 
 ### Practical Algorithm Sketch
+
+The algorithm alternates between local refinement (2-swap) and global restructuring (block moves):
+
+```mermaid
+graph TD
+    A[Initialize π₀] --> B[2-Swap Local Search]
+    B --> C{Local minimum?}
+    C -->|No| B
+    C -->|Yes| D[Identify Candidate Blocks]
+    D --> E[Block Reoptimization]
+    E --> F{Improvement?}
+    F -->|Yes| B
+    F -->|No| G[Converged / Budget]
+    G --> H[Final Assignment π]
+    H --> I[Embedding → Code Mapping]
+    I --> J[ANN Index Construction]
+```
 
 1. **Initialization**
    - Obtain codebook vectors $c_1, \dots, c_N$ (e.g., via k-means, PQ)
@@ -134,11 +366,13 @@ Under the planted pseudo-Gray model with suitable conditions, there exist consta
 2. **2-Swap Local Optimization**
    - Run local search applying improving 2-swaps
    - Continue until no improvement or budget reached
+   - This refines the assignment but may get trapped
 
 3. **Block Tunneling**
    - Identify candidate blocks (clusters or geometric subcubes)
    - For each block, solve restricted QAP and apply best improving reassignment
    - Iterate between 2-swap local search and block tuning
+   - Block moves provide the "tunneling" mechanism to escape local minima
 
 4. **Embedding Assignment and Indexing**
    - Assign codebook indices to binary codes according to optimized $\pi$
@@ -156,6 +390,28 @@ Compared to naive binary coding:
 - **Better locality**: Hamming-1 neighbors correspond more consistently to nearest codebooks
 - **Higher recall**: Code geometry better aligned with embedding geometry → Hamming balls contain more true neighbors
 - **Fewer bits for same quality**: Pseudo-Gray structure may allow shorter codes while maintaining target recall
+
+**Visualizing the Benefit**:
+
+```
+Naive Binary Coding:          Gray-Tunneled Hashing:
+                               
+Query q → Code 011            Query q → Code 011
+                               
+Hamming-1 neighbors:          Hamming-1 neighbors:
+  010 ── 011 ── 111             010 ── 011 ── 111
+   │      │      │               │      │      │
+   │      │      │               │      │      │
+  000 ── 001 ── 101             000 ── 001 ── 101
+                               
+Neighbors may have            Neighbors are guaranteed
+unrelated embeddings          to be semantically similar
+                               
+Hamming ball around query     Hamming ball contains
+contains many false positives  more true neighbors
+```
+
+The key improvement is that Hamming distance in code space better reflects semantic distance in embedding space, making Hamming-based search more effective for ANN retrieval.
 
 All achieved without changing underlying Hamming-based infrastructure of vector databases.
 
