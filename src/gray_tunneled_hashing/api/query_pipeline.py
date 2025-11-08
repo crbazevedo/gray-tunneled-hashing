@@ -138,13 +138,15 @@ def query_with_hamming_ball(
     Query with Hamming ball expansion after GTH permutation.
     
     Pipeline:
-    1. Apply GTH permutation: c̃_q = σ(c_q)
-    2. Expand Hamming ball: C_q(r) = {z : d_H(z, c̃_q) ≤ r}
-    3. Map codes back to buckets and extract candidate indices
+    1. Convert query_code to vertex index
+    2. Expand Hamming ball around query_code in vertex space
+    3. For each vertex in ball, apply permutation to get bucket_idx
+    4. Return unique bucket indices
     
     Args:
         query_code: Query code of shape (n_bits,) with dtype bool (before GTH)
         permutation: GTH permutation array of shape (N,) where N = 2**n_bits
+                    permutation[vertex_idx] = bucket_idx
         code_to_bucket: Dictionary mapping code tuples to bucket indices
         bucket_to_code: Array of bucket codes of shape (K, n_bits)
         n_bits: Number of bits
@@ -154,8 +156,7 @@ def query_with_hamming_ball(
     Returns:
         QueryResult with candidate codes and indices
     """
-    # Step 1: Apply GTH permutation
-    # Convert query_code to vertex index
+    # Step 1: Convert query_code to vertex index
     query_code_int = 0
     for i, bit in enumerate(query_code):
         if bit:
@@ -167,51 +168,39 @@ def query_with_hamming_ball(
             f"but permutation has length {len(permutation)}"
         )
     
-    # Get permuted code via permutation
-    permuted_vertex_idx = permutation[query_code_int]
-    
-    # Convert permuted vertex index back to code
-    vertices = generate_hypercube_vertices(n_bits)
-    if permuted_vertex_idx >= len(vertices):
-        raise ValueError(
-            f"Permuted vertex index {permuted_vertex_idx} out of range [0, {len(vertices)})"
-        )
-    permuted_code = vertices[permuted_vertex_idx].astype(bool)
-    
-    # Step 2: Expand Hamming ball
-    candidate_codes = expand_hamming_ball(
-        permuted_code,
+    # Step 2: Expand Hamming ball around query_code in vertex space
+    candidate_vertex_codes = expand_hamming_ball(
+        query_code,
         radius=hamming_radius,
         n_bits=n_bits,
         max_codes=max_candidates,
     )
     
-    # Step 3: Map codes to buckets and extract candidate indices
-    candidate_indices_list = []
+    # Step 3: For each vertex in ball, apply permutation to get bucket_idx
+    # permutation[vertex_idx] = bucket_idx
+    vertices = generate_hypercube_vertices(n_bits)
+    candidate_buckets = set()
     valid_codes = []
     
-    for code in candidate_codes:
-        code_tuple = tuple(code.astype(int).tolist())
-        if code_tuple in code_to_bucket:
-            bucket_idx = code_to_bucket[code_tuple]
-            # For now, we return bucket indices
-            # In full implementation, would map to actual dataset indices
-            candidate_indices_list.append(bucket_idx)
-            valid_codes.append(code)
+    for vertex_code in candidate_vertex_codes:
+        # Convert vertex code to vertex index
+        vertex_idx = 0
+        for i, bit in enumerate(vertex_code):
+            if bit:
+                vertex_idx += 2 ** i
+        
+        if vertex_idx < len(permutation):
+            bucket_idx = permutation[vertex_idx]
+            candidate_buckets.add(bucket_idx)
+            valid_codes.append(vertex_code)
     
-    if len(valid_codes) == 0:
-        # No candidates found, return empty result
-        return QueryResult(
-            query_code=query_code,
-            permuted_code=permuted_code,
-            candidate_codes=np.empty((0, n_bits), dtype=bool),
-            candidate_indices=np.array([], dtype=np.int32),
-            hamming_radius=hamming_radius,
-            n_candidates=0,
-        )
+    # Step 4: Convert bucket indices to codes for permuted_code representation
+    # Use the first valid code as permuted_code (the query code itself after expansion)
+    permuted_code = query_code.copy() if len(valid_codes) > 0 else np.zeros(n_bits, dtype=bool)
     
-    candidate_codes_array = np.array(valid_codes, dtype=bool)
-    candidate_indices_array = np.array(candidate_indices_list, dtype=np.int32)
+    # Convert bucket indices to array
+    candidate_indices_array = np.array(sorted(candidate_buckets), dtype=np.int32)
+    candidate_codes_array = np.array(valid_codes, dtype=bool) if len(valid_codes) > 0 else np.empty((0, n_bits), dtype=bool)
     
     return QueryResult(
         query_code=query_code,
