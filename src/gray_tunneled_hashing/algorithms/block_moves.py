@@ -1,10 +1,11 @@
 """Block moves and tunneling for QAP optimization."""
 
 import numpy as np
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable
 from itertools import permutations
 
 from gray_tunneled_hashing.algorithms.qap_objective import qap_cost
+from gray_tunneled_hashing.algorithms.block_selection import select_block_random
 
 
 def select_block(
@@ -123,6 +124,7 @@ def tunneling_step(
     block_size: int,
     num_blocks: int = 10,
     random_state: Optional[int] = None,
+    block_selection_fn: Optional[Callable] = None,
 ) -> Tuple[np.ndarray, float]:
     """
     Perform one tunneling step: try multiple blocks and apply best improving move.
@@ -134,6 +136,8 @@ def tunneling_step(
         block_size: Size of blocks to try
         num_blocks: Number of candidate blocks to sample
         random_state: Random seed for reproducibility
+        block_selection_fn: Function to select blocks. If None, uses random selection.
+                           Signature: (N, block_size, random_state) -> np.ndarray
         
     Returns:
         Tuple of (pi_new, best_delta) where:
@@ -153,10 +157,16 @@ def tunneling_step(
     best_pi = pi.copy()
     best_delta = 0.0
     
-    # Try multiple random blocks
+    # Use provided block selection function or default to random
+    if block_selection_fn is None:
+        block_selection_fn = lambda N, block_size, random_state=None: select_block(
+            N, block_size, random_state
+        )
+    
+    # Try multiple blocks
     for i in range(num_blocks):
-        # Select random block
-        block_vertices = select_block(N, block_size, random_state=None)
+        # Select block using provided function
+        block_vertices = block_selection_fn(N, block_size, random_state=None)
         
         # Reoptimize within block
         pi_candidate, delta = block_reoptimize(pi, D, edges, block_vertices)

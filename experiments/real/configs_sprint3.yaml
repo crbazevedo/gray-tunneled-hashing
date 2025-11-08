@@ -1,0 +1,20 @@
+# Sprint 3: Hyperparameter Sweep Configuration
+# This file defines the grid of hyperparameters to explore
+
+datasets:
+  - name: "quora"  # Dataset name (must have embeddings in experiments/real/data/)
+    n_bits: [32, 64, 128]
+    n_codes: [256, 512, 1024]
+    block_sizes: [4, 8, 16]
+    num_tunneling_steps: [0, 5, 10]
+    gt_modes: ["trivial", "two_swap_only", "full"]
+    block_selection_strategies: ["random", "cluster"]
+    k_values: [10, 50, 100]  # For recall@k evaluation
+    random_state: 42
+    max_two_swap_iters: 50  # Max iterations for 2-swap hill climbing
+    two_swap_sample_size: 256  # Number of 2-swap candidates per iteration
+
+# Note: For "trivial" mode, block_sizes and num_tunneling_steps are ignored
+# For "two_swap_only" mode, num_tunneling_steps is set to 0 internally
+# For "full" mode, both block_selection_strategies are tested
+

@@ -1,0 +1,463 @@
+{
+  "args": {
+    "n_bits": 8,
+    "n_codes": 16,
+    "n_runs": 5,
+    "n_workers": 4,
+    "output": "experiments/real/diagnosis_results.json"
+  },
+  "summary": {
+    "n_runs": 5,
+    "n_violations": 2,
+    "violation_rate": 0.4
+  },
+  "hypothesis_ranking": [
+    {
+      "hypothesis_id": "H3",
+      "name": "Permutation not minimizing J(\u03c6)",
+      "fail_rate": 1.0,
+      "avg_confidence": 0.6
+    },
+    {
+      "hypothesis_id": "H1",
+      "name": "J(\u03c6\u2080) calculation incorrect",
+      "fail_rate": 1.0,
+      "avg_confidence": 0.9625247842215792
+    },
+    {
+      "hypothesis_id": "H2",
+      "name": "J(\u03c6*) calculation incorrect",
+      "fail_rate": 0.4,
+      "avg_confidence": 0.9
+    },
+    {
+      "hypothesis_id": "H5",
+      "name": "D_weighted construction incorrect",
+      "fail_rate": 0.0,
+      "avg_confidence": 0.8
+    },
+    {
+      "hypothesis_id": "H4",
+      "name": "Bucket to code mapping incorrect",
+      "fail_rate": 0.0,
+      "avg_confidence": 0.9
+    }
+  ],
+  "detailed_results": [
+    {
+      "config": {
+        "n_bits": 8,
+        "n_codes": 16,
+        "random_state": 44
+      },
+      "j_phi_0": 3.851999999999975,
+      "j_phi_star": 3.9019999999999757,
+      "violation": 0.05000000000000071,
+      "hypotheses": [
+        {
+          "hypothesis_id": "H1",
+          "hypothesis_name": "J(\u03c6\u2080) calculation incorrect",
+          "status": "FAIL",
+          "evidence": {
+            "j_phi_0_method1": 3.851999999999975,
+            "j_phi_0_method2": 3.8139999999999787,
+            "difference": 0.03799999999999626,
+            "relative_difference": 0.009865005192107089
+          },
+          "confidence": 0.9901349948078929,
+          "details": "Method 1 (direct): 3.852000, Method 2 (identity perm): 3.814000, Diff: 0.038000"
+        },
+        {
+          "hypothesis_id": "H2",
+          "hypothesis_name": "J(\u03c6*) calculation incorrect",
+          "status": "FAIL",
+          "evidence": {
+            "j_phi_star": 3.9019999999999757,
+            "j_phi_0": 3.851999999999975,
+            "violation": 0.05000000000000071,
+            "missing_buckets": 0,
+            "multiple_assignments": 0,
+            "is_valid": true
+          },
+          "confidence": 0.9,
+          "details": "J(\u03c6*): 3.902000, J(\u03c6\u2080): 3.852000, Violation: 0.050000, Missing: 0, Multiple: 0"
+        },
+        {
+          "hypothesis_id": "H3",
+          "hypothesis_name": "Permutation not minimizing J(\u03c6)",
+          "status": "FAIL",
+          "evidence": {
+            "qap_cost_perm": 0.026636059681423036,
+            "qap_cost_identity": 0.06092172522572446,
+            "min_random_cost": 0.0,
+            "is_better_than_identity": true,
+            "is_better_than_random": false
+          },
+          "confidence": 0.8,
+          "details": "QAP cost (perm): 0.026636, (identity): 0.060922, (min random): 0.000000"
+        },
+        {
+          "hypothesis_id": "H4",
+          "hypothesis_name": "Bucket to code mapping incorrect",
+          "status": "PASS",
+          "evidence": {
+            "invalid_codes": 0,
+            "invalid_mappings": 0,
+            "buckets_mapped": 169,
+            "total_buckets": 169
+          },
+          "confidence": 0.9,
+          "details": "Invalid codes: 0, Invalid mappings: 0, Mapped: 169/169"
+        },
+        {
+          "hypothesis_id": "H5",
+          "hypothesis_name": "D_weighted construction incorrect",
+          "status": "PASS",
+          "evidence": {
+            "correct_shape": true,
+            "all_non_negative": true,
+            "is_symmetric": false,
+            "diagonal_max": 0.0,
+            "diagonal_ok": true,
+            "high_traffic_mean": 0.0007071924946263637,
+            "low_traffic_mean": 0.0
+          },
+          "confidence": 0.8,
+          "details": "Shape: (169, 169), Non-neg: True, Symmetric: False, Diag max: 0.000000"
+        }
+      ]
+    },
+    {
+      "config": {
+        "n_bits": 8,
+        "n_codes": 16,
+        "random_state": 43
+      },
+      "j_phi_0": 4.073999999999976,
+      "j_phi_star": 3.9939999999999776,
+      "violation": -0.0799999999999983,
+      "hypotheses": [
+        {
+          "hypothesis_id": "H1",
+          "hypothesis_name": "J(\u03c6\u2080) calculation incorrect",
+          "status": "FAIL",
+          "evidence": {
+            "j_phi_0_method1": 4.073999999999976,
+            "j_phi_0_method2": 3.8279999999999763,
+            "difference": 0.24599999999999955,
+            "relative_difference": 0.060382916053019396
+          },
+          "confidence": 0.9396170839469806,
+          "details": "Method 1 (direct): 4.074000, Method 2 (identity perm): 3.828000, Diff: 0.246000"
+        },
+        {
+          "hypothesis_id": "H2",
+          "hypothesis_name": "J(\u03c6*) calculation incorrect",
+          "status": "PASS",
+          "evidence": {
+            "j_phi_star": 3.9939999999999776,
+            "j_phi_0": 4.073999999999976,
+            "violation": -0.0799999999999983,
+            "missing_buckets": 0,
+            "multiple_assignments": 0,
+            "is_valid": true
+          },
+          "confidence": 0.9,
+          "details": "J(\u03c6*): 3.994000, J(\u03c6\u2080): 4.074000, Violation: -0.080000, Missing: 0, Multiple: 0"
+        },
+        {
+          "hypothesis_id": "H3",
+          "hypothesis_name": "Permutation not minimizing J(\u03c6)",
+          "status": "FAIL",
+          "evidence": {
+            "qap_cost_perm": 0.0,
+            "qap_cost_identity": 0.05398637187768293,
+            "min_random_cost": 0.0,
+            "is_better_than_identity": true,
+            "is_better_than_random": false
+          },
+          "confidence": 0.8,
+          "details": "QAP cost (perm): 0.000000, (identity): 0.053986, (min random): 0.000000"
+        },
+        {
+          "hypothesis_id": "H4",
+          "hypothesis_name": "Bucket to code mapping incorrect",
+          "status": "PASS",
+          "evidence": {
+            "invalid_codes": 0,
+            "invalid_mappings": 0,
+            "buckets_mapped": 178,
+            "total_buckets": 178
+          },
+          "confidence": 0.9,
+          "details": "Invalid codes: 0, Invalid mappings: 0, Mapped: 178/178"
+        },
+        {
+          "hypothesis_id": "H5",
+          "hypothesis_name": "D_weighted construction incorrect",
+          "status": "PASS",
+          "evidence": {
+            "correct_shape": true,
+            "all_non_negative": true,
+            "is_symmetric": false,
+            "diagonal_max": 0.0,
+            "diagonal_ok": true,
+            "high_traffic_mean": 0.0002446011961250089,
+            "low_traffic_mean": 0.0
+          },
+          "confidence": 0.8,
+          "details": "Shape: (178, 178), Non-neg: True, Symmetric: False, Diag max: 0.000000"
+        }
+      ]
+    },
+    {
+      "config": {
+        "n_bits": 8,
+        "n_codes": 16,
+        "random_state": 45
+      },
+      "j_phi_0": 4.041999999999977,
+      "j_phi_star": 4.015999999999979,
+      "violation": -0.025999999999998025,
+      "hypotheses": [
+        {
+          "hypothesis_id": "H1",
+          "hypothesis_name": "J(\u03c6\u2080) calculation incorrect",
+          "status": "FAIL",
+          "evidence": {
+            "j_phi_0_method1": 4.041999999999977,
+            "j_phi_0_method2": 3.86599999999998,
+            "difference": 0.1759999999999966,
+            "relative_difference": 0.04354280059376487
+          },
+          "confidence": 0.9564571994062351,
+          "details": "Method 1 (direct): 4.042000, Method 2 (identity perm): 3.866000, Diff: 0.176000"
+        },
+        {
+          "hypothesis_id": "H2",
+          "hypothesis_name": "J(\u03c6*) calculation incorrect",
+          "status": "PASS",
+          "evidence": {
+            "j_phi_star": 4.015999999999979,
+            "j_phi_0": 4.041999999999977,
+            "violation": -0.025999999999998025,
+            "missing_buckets": 0,
+            "multiple_assignments": 0,
+            "is_valid": true
+          },
+          "confidence": 0.9,
+          "details": "J(\u03c6*): 4.016000, J(\u03c6\u2080): 4.042000, Violation: -0.026000, Missing: 0, Multiple: 0"
+        },
+        {
+          "hypothesis_id": "H3",
+          "hypothesis_name": "Permutation not minimizing J(\u03c6)",
+          "status": "FAIL",
+          "evidence": {
+            "qap_cost_perm": 0.0,
+            "qap_cost_identity": 0.0,
+            "min_random_cost": 0.0,
+            "is_better_than_identity": false,
+            "is_better_than_random": false
+          },
+          "confidence": 0.3,
+          "details": "QAP cost (perm): 0.000000, (identity): 0.000000, (min random): 0.000000"
+        },
+        {
+          "hypothesis_id": "H4",
+          "hypothesis_name": "Bucket to code mapping incorrect",
+          "status": "PASS",
+          "evidence": {
+            "invalid_codes": 0,
+            "invalid_mappings": 0,
+            "buckets_mapped": 169,
+            "total_buckets": 169
+          },
+          "confidence": 0.9,
+          "details": "Invalid codes: 0, Invalid mappings: 0, Mapped: 169/169"
+        },
+        {
+          "hypothesis_id": "H5",
+          "hypothesis_name": "D_weighted construction incorrect",
+          "status": "PASS",
+          "evidence": {
+            "correct_shape": true,
+            "all_non_negative": true,
+            "is_symmetric": false,
+            "diagonal_max": 0.0,
+            "diagonal_ok": true,
+            "high_traffic_mean": 0.000639590134484001,
+            "low_traffic_mean": 0.0
+          },
+          "confidence": 0.8,
+          "details": "Shape: (169, 169), Non-neg: True, Symmetric: False, Diag max: 0.000000"
+        }
+      ]
+    },
+    {
+      "config": {
+        "n_bits": 8,
+        "n_codes": 16,
+        "random_state": 42
+      },
+      "j_phi_0": 3.983999999999977,
+      "j_phi_star": 4.003999999999979,
+      "violation": 0.020000000000002238,
+      "hypotheses": [
+        {
+          "hypothesis_id": "H1",
+          "hypothesis_name": "J(\u03c6\u2080) calculation incorrect",
+          "status": "FAIL",
+          "evidence": {
+            "j_phi_0_method1": 3.983999999999977,
+            "j_phi_0_method2": 3.93399999999998,
+            "difference": 0.049999999999996714,
+            "relative_difference": 0.012550200803212098
+          },
+          "confidence": 0.9874497991967879,
+          "details": "Method 1 (direct): 3.984000, Method 2 (identity perm): 3.934000, Diff: 0.050000"
+        },
+        {
+          "hypothesis_id": "H2",
+          "hypothesis_name": "J(\u03c6*) calculation incorrect",
+          "status": "FAIL",
+          "evidence": {
+            "j_phi_star": 4.003999999999979,
+            "j_phi_0": 3.983999999999977,
+            "violation": 0.020000000000002238,
+            "missing_buckets": 0,
+            "multiple_assignments": 0,
+            "is_valid": true
+          },
+          "confidence": 0.9,
+          "details": "J(\u03c6*): 4.004000, J(\u03c6\u2080): 3.984000, Violation: 0.020000, Missing: 0, Multiple: 0"
+        },
+        {
+          "hypothesis_id": "H3",
+          "hypothesis_name": "Permutation not minimizing J(\u03c6)",
+          "status": "FAIL",
+          "evidence": {
+            "qap_cost_perm": 0.0,
+            "qap_cost_identity": 0.0,
+            "min_random_cost": 0.0,
+            "is_better_than_identity": false,
+            "is_better_than_random": false
+          },
+          "confidence": 0.3,
+          "details": "QAP cost (perm): 0.000000, (identity): 0.000000, (min random): 0.000000"
+        },
+        {
+          "hypothesis_id": "H4",
+          "hypothesis_name": "Bucket to code mapping incorrect",
+          "status": "PASS",
+          "evidence": {
+            "invalid_codes": 0,
+            "invalid_mappings": 0,
+            "buckets_mapped": 201,
+            "total_buckets": 201
+          },
+          "confidence": 0.9,
+          "details": "Invalid codes: 0, Invalid mappings: 0, Mapped: 201/201"
+        },
+        {
+          "hypothesis_id": "H5",
+          "hypothesis_name": "D_weighted construction incorrect",
+          "status": "PASS",
+          "evidence": {
+            "correct_shape": true,
+            "all_non_negative": true,
+            "is_symmetric": false,
+            "diagonal_max": 0.0,
+            "diagonal_ok": true,
+            "high_traffic_mean": 0.0001777390496597002,
+            "low_traffic_mean": 0.0
+          },
+          "confidence": 0.8,
+          "details": "Shape: (201, 201), Non-neg: True, Symmetric: False, Diag max: 0.000000"
+        }
+      ]
+    },
+    {
+      "config": {
+        "n_bits": 8,
+        "n_codes": 16,
+        "random_state": 46
+      },
+      "j_phi_0": 4.095999999999977,
+      "j_phi_star": 3.9659999999999767,
+      "violation": -0.13000000000000034,
+      "hypotheses": [
+        {
+          "hypothesis_id": "H1",
+          "hypothesis_name": "J(\u03c6\u2080) calculation incorrect",
+          "status": "FAIL",
+          "evidence": {
+            "j_phi_0_method1": 4.095999999999977,
+            "j_phi_0_method2": 3.8459999999999783,
+            "difference": 0.24999999999999867,
+            "relative_difference": 0.06103515625000002
+          },
+          "confidence": 0.93896484375,
+          "details": "Method 1 (direct): 4.096000, Method 2 (identity perm): 3.846000, Diff: 0.250000"
+        },
+        {
+          "hypothesis_id": "H2",
+          "hypothesis_name": "J(\u03c6*) calculation incorrect",
+          "status": "PASS",
+          "evidence": {
+            "j_phi_star": 3.9659999999999767,
+            "j_phi_0": 4.095999999999977,
+            "violation": -0.13000000000000034,
+            "missing_buckets": 0,
+            "multiple_assignments": 0,
+            "is_valid": true
+          },
+          "confidence": 0.9,
+          "details": "J(\u03c6*): 3.966000, J(\u03c6\u2080): 4.096000, Violation: -0.130000, Missing: 0, Multiple: 0"
+        },
+        {
+          "hypothesis_id": "H3",
+          "hypothesis_name": "Permutation not minimizing J(\u03c6)",
+          "status": "FAIL",
+          "evidence": {
+            "qap_cost_perm": 0.0,
+            "qap_cost_identity": 0.025738391130063973,
+            "min_random_cost": 0.0,
+            "is_better_than_identity": true,
+            "is_better_than_random": false
+          },
+          "confidence": 0.8,
+          "details": "QAP cost (perm): 0.000000, (identity): 0.025738, (min random): 0.000000"
+        },
+        {
+          "hypothesis_id": "H4",
+          "hypothesis_name": "Bucket to code mapping incorrect",
+          "status": "PASS",
+          "evidence": {
+            "invalid_codes": 0,
+            "invalid_mappings": 0,
+            "buckets_mapped": 197,
+            "total_buckets": 197
+          },
+          "confidence": 0.9,
+          "details": "Invalid codes: 0, Invalid mappings: 0, Mapped: 197/197"
+        },
+        {
+          "hypothesis_id": "H5",
+          "hypothesis_name": "D_weighted construction incorrect",
+          "status": "PASS",
+          "evidence": {
+            "correct_shape": true,
+            "all_non_negative": true,
+            "is_symmetric": false,
+            "diagonal_max": 0.0,
+            "diagonal_ok": true,
+            "high_traffic_mean": 0.0003104461472246166,
+            "low_traffic_mean": 0.0
+          },
+          "confidence": 0.8,
+          "details": "Shape: (197, 197), Non-neg: True, Symmetric: False, Diag max: 0.000000"
+        }
+      ]
+    }
+  ]
+}

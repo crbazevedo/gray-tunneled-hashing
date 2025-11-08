@@ -1,7 +1,8 @@
 """Gray-Tunneled Hashing algorithm implementation."""
 
 import numpy as np
-from typing import Optional
+import time
+from typing import Optional, Literal, Dict, Any
 
 from gray_tunneled_hashing.algorithms.qap_objective import (
     generate_hypercube_edges,
@@ -9,6 +10,10 @@ from gray_tunneled_hashing.algorithms.qap_objective import (
     hill_climb_two_swap,
 )
 from gray_tunneled_hashing.algorithms.block_moves import tunneling_step
+from gray_tunneled_hashing.algorithms.block_selection import (
+    get_block_selection_fn,
+    select_block_random,
+)
 
 
 class GrayTunneledHasher:
@@ -40,6 +45,10 @@ class GrayTunneledHasher:
         two_swap_sample_size: int = 256,
         init_strategy: str = "random",
         random_state: Optional[int] = None,
+        mode: Literal["trivial", "two_swap_only", "full"] = "full",
+        track_history: bool = False,
+        block_selection_strategy: Literal["random", "cluster"] = "random",
+        cluster_assignments: Optional[np.ndarray] = None,
     ):
         """
         Initialize the Gray-Tunneled Hasher.
@@ -52,6 +61,13 @@ class GrayTunneledHasher:
             two_swap_sample_size: Number of 2-swap candidates to sample per iteration (default: 256)
             init_strategy: Initialization strategy ('random' or 'identity', default: 'random')
             random_state: Random seed for reproducibility (default: None)
+            mode: Optimization mode (default: 'full')
+                - 'trivial': Simple mapping (identity or Gray-code), no optimization
+                - 'two_swap_only': 2-swap hill climb only, no tunneling
+                - 'full': 2-swap + tunneling (current behavior)
+            track_history: If True, store detailed cost history with timestamps (default: False)
+            block_selection_strategy: Strategy for selecting blocks ('random' or 'cluster', default: 'random')
+            cluster_assignments: Cluster assignments for cluster-based block selection (required if strategy='cluster')
         """
         if n_bits <= 0:
             raise ValueError(f"n_bits must be positive, got {n_bits}")
@@ -59,6 +75,17 @@ class GrayTunneledHasher:
             raise ValueError(f"block_size must be positive, got {block_size}")
         if init_strategy not in ["random", "identity"]:
             raise ValueError(f"init_strategy must be 'random' or 'identity', got {init_strategy}")
+        if mode not in ["trivial", "two_swap_only", "full"]:
+            raise ValueError(f"mode must be 'trivial', 'two_swap_only', or 'full', got {mode}")
+        if block_selection_strategy not in ["random", "cluster"]:
+            raise ValueError(
+                f"block_selection_strategy must be 'random' or 'cluster', "
+                f"got {block_selection_strategy}"
+            )
+        if block_selection_strategy == "cluster" and cluster_assignments is None:
+            raise ValueError(
+                "cluster_assignments is required when block_selection_strategy='cluster'"
+            )
         
         self.n_bits = n_bits
         self.N = 2 ** n_bits
@@ -68,6 +95,10 @@ class GrayTunneledHasher:
         self.two_swap_sample_size = two_swap_sample_size
         self.init_strategy = init_strategy
         self.random_state = random_state
+        self.mode = mode
+        self.track_history = track_history
+        self.block_selection_strategy = block_selection_strategy
+        self.cluster_assignments = cluster_assignments
         
         self.is_fitted = False
         self.pi_ = None
@@ -76,22 +107,30 @@ class GrayTunneledHasher:
         self.edges_ = None
         self.D_ = None
 
-    def fit(self, embeddings: np.ndarray) -> "GrayTunneledHasher":
+    def fit(
+        self,
+        embeddings: np.ndarray,
+        D: Optional[np.ndarray] = None,
+    ) -> "GrayTunneledHasher":
         """
         Fit the hasher to embeddings by optimizing QAP assignment.
         
         For Sprint 1, embeddings should be synthetic w of shape (N, dim) with N = 2**n_bits.
+        For Sprint 2+, embeddings can be centroids from codebook (n_codes <= 2**n_bits).
         
-        Steps:
-        1. Compute distance matrix D
+        Steps (depending on mode):
+        1. Compute distance matrix D (or use provided D)
         2. Generate hypercube edges
-        3. Initialize permutation (identity or random)
-        4. Run hill_climb_two_swap
-        5. Run tunneling steps
-        6. Save results
+        3. Initialize permutation (identity, random, or Gray-code)
+        4. Run optimization based on mode:
+           - trivial: Use simple mapping
+           - two_swap_only: Run hill_climb_two_swap only
+           - full: Run hill_climb_two_swap + tunneling
+        5. Save results
         
         Args:
-            embeddings: Training embeddings of shape (N, dim) where N = 2**n_bits
+            embeddings: Training embeddings of shape (N, dim) where N = 2**n_bits (or n_codes)
+            D: Optional custom distance matrix of shape (N, N). If None, computed from embeddings.
             
         Returns:
             self (for method chaining)
@@ -99,6 +138,9 @@ class GrayTunneledHasher:
         if embeddings.ndim != 2:
             raise ValueError(f"embeddings must be 2D, got {embeddings.ndim}D")
         
+        # Allow N != 2**n_bits for codebook scenarios (n_codes < 2**n_bits)
+        # But for now, we'll enforce it for backward compatibility
+        # In future, we can relax this
         if embeddings.shape[0] != self.N:
             raise ValueError(
                 f"embeddings must have shape ({self.N}, dim) where N = 2**n_bits = 2**{self.n_bits}, "
@@ -109,62 +151,399 @@ class GrayTunneledHasher:
         if self.random_state is not None:
             np.random.seed(self.random_state)
         
-        # Step 1: Compute distance matrix D
-        dim = embeddings.shape[1]
-        D = np.zeros((self.N, self.N), dtype=np.float64)
-        for i in range(self.N):
-            for j in range(self.N):
-                D[i, j] = np.linalg.norm(embeddings[i] - embeddings[j]) ** 2
-        
-        self.D_ = D
+        # Step 1: Compute or use provided distance matrix D
+        if D is not None:
+            if D.shape != (self.N, self.N):
+                raise ValueError(
+                    f"Provided D must have shape ({self.N}, {self.N}), got {D.shape}"
+                )
+            self.D_ = D.astype(np.float64)
+        else:
+            dim = embeddings.shape[1]
+            D = np.zeros((self.N, self.N), dtype=np.float64)
+            for i in range(self.N):
+                for j in range(self.N):
+                    D[i, j] = np.linalg.norm(embeddings[i] - embeddings[j]) ** 2
+            self.D_ = D
         
         # Step 2: Generate hypercube edges
         edges = generate_hypercube_edges(self.n_bits)
         self.edges_ = edges
         
-        # Step 3: Initialize permutation
-        if self.init_strategy == "identity":
-            pi_init = np.arange(self.N, dtype=np.int32)
-        else:  # random
-            pi_init = np.random.permutation(self.N).astype(np.int32)
+        # Initialize cost history
+        if self.track_history:
+            self.cost_history_ = []  # List of dicts with metadata
+        else:
+            self.cost_history_ = []  # List of floats for backward compatibility
         
-        # Step 4: Run 2-swap hill climbing
-        pi, cost_history = hill_climb_two_swap(
-            pi_init=pi_init,
-            D=D,
-            edges=edges,
-            max_iter=self.max_two_swap_iters,
-            sample_size=self.two_swap_sample_size,
-            random_state=self.random_state,
-        )
+        # Step 3: Initialize permutation based on mode
+        if self.mode == "trivial":
+            # Trivial mode: use identity or Gray-code mapping
+            pi = self._create_trivial_mapping(embeddings)
+            cost = qap_cost(pi, D, edges)
+            
+            if self.track_history:
+                self.cost_history_.append({
+                    "cost": float(cost),
+                    "step": "trivial_mapping",
+                    "iteration": 0,
+                    "timestamp": time.time(),
+                })
+            else:
+                self.cost_history_.append(cost)
         
-        # Step 5: Run tunneling steps
-        for step in range(self.num_tunneling_steps):
-            pi_new, delta = tunneling_step(
-                pi=pi,
+        elif self.mode == "two_swap_only":
+            # Two-swap only mode
+            if self.init_strategy == "identity":
+                pi_init = np.arange(self.N, dtype=np.int32)
+            else:  # random
+                pi_init = np.random.permutation(self.N).astype(np.int32)
+            
+            initial_cost = qap_cost(pi_init, D, edges)
+            if self.track_history:
+                self.cost_history_.append({
+                    "cost": float(initial_cost),
+                    "step": "initialization",
+                    "iteration": 0,
+                    "timestamp": time.time(),
+                })
+            else:
+                self.cost_history_.append(initial_cost)
+            
+            # Run 2-swap hill climbing
+            pi, cost_history_two_swap = hill_climb_two_swap(
+                pi_init=pi_init,
                 D=D,
                 edges=edges,
-                block_size=self.block_size,
-                num_blocks=10,
-                random_state=None,  # Use different random state for each step
+                max_iter=self.max_two_swap_iters,
+                sample_size=self.two_swap_sample_size,
+                random_state=self.random_state,
             )
             
-            if delta < -1e-10:  # Improvement found
-                pi = pi_new
-                current_cost = qap_cost(pi, D, edges)
-                cost_history.append(current_cost)
+            # Merge cost history
+            if self.track_history:
+                for i, cost_val in enumerate(cost_history_two_swap[1:], start=1):
+                    self.cost_history_.append({
+                        "cost": float(cost_val),
+                        "step": f"two_swap_iter_{i}",
+                        "iteration": i,
+                        "timestamp": time.time(),
+                    })
             else:
-                # No improvement, continue with current pi
-                pass
+                self.cost_history_.extend(cost_history_two_swap[1:])
+        
+        else:  # mode == "full"
+            # Full mode: 2-swap + tunneling
+            if self.init_strategy == "identity":
+                pi_init = np.arange(self.N, dtype=np.int32)
+            else:  # random
+                pi_init = np.random.permutation(self.N).astype(np.int32)
+            
+            initial_cost = qap_cost(pi_init, D, edges)
+            if self.track_history:
+                self.cost_history_.append({
+                    "cost": float(initial_cost),
+                    "step": "initialization",
+                    "iteration": 0,
+                    "timestamp": time.time(),
+                })
+            else:
+                self.cost_history_.append(initial_cost)
+            
+            # Step 4: Run 2-swap hill climbing
+            pi, cost_history_two_swap = hill_climb_two_swap(
+                pi_init=pi_init,
+                D=D,
+                edges=edges,
+                max_iter=self.max_two_swap_iters,
+                sample_size=self.two_swap_sample_size,
+                random_state=self.random_state,
+            )
+            
+            # Merge 2-swap cost history
+            if self.track_history:
+                for i, cost_val in enumerate(cost_history_two_swap[1:], start=1):
+                    self.cost_history_.append({
+                        "cost": float(cost_val),
+                        "step": f"two_swap_iter_{i}",
+                        "iteration": i,
+                        "timestamp": time.time(),
+                    })
+            else:
+                self.cost_history_.extend(cost_history_two_swap[1:])
+            
+            # Step 5: Run tunneling steps
+            # Get block selection function
+            block_selection_fn = None
+            if self.block_selection_strategy == "cluster" and self.cluster_assignments is not None:
+                # Create cluster-based block selection function
+                block_selection_fn = get_block_selection_fn(
+                    "cluster",
+                    pi=pi,
+                    cluster_assignments=self.cluster_assignments,
+                )
+            else:
+                block_selection_fn = get_block_selection_fn("random")
+            
+            for step in range(self.num_tunneling_steps):
+                pi_new, delta = tunneling_step(
+                    pi=pi,
+                    D=D,
+                    edges=edges,
+                    block_size=self.block_size,
+                    num_blocks=10,
+                    random_state=None,  # Use different random state for each step
+                    block_selection_fn=block_selection_fn,
+                )
+                
+                if delta < -1e-10:  # Improvement found
+                    pi = pi_new
+                    current_cost = qap_cost(pi, D, edges)
+                    
+                    if self.track_history:
+                        self.cost_history_.append({
+                            "cost": float(current_cost),
+                            "step": f"tunneling_step_{step}",
+                            "iteration": len(self.cost_history_),
+                            "timestamp": time.time(),
+                        })
+                    else:
+                        self.cost_history_.append(current_cost)
+                else:
+                    # No improvement, but still record
+                    if self.track_history:
+                        current_cost = qap_cost(pi, D, edges)
+                        self.cost_history_.append({
+                            "cost": float(current_cost),
+                            "step": f"tunneling_step_{step}_no_improvement",
+                            "iteration": len(self.cost_history_),
+                            "timestamp": time.time(),
+                        })
         
         # Step 6: Save results
         self.pi_ = pi
         self.cost_ = qap_cost(pi, D, edges)
-        self.cost_history_ = cost_history
         self.is_fitted = True
         
         return self
+    
+    def _create_trivial_mapping(
+        self,
+        embeddings: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Create trivial mapping (identity or Gray-code order).
+        
+        Args:
+            embeddings: Embeddings of shape (N, dim)
+            
+        Returns:
+            Permutation array pi
+        """
+        N = embeddings.shape[0]
+        
+        if self.init_strategy == "identity":
+            # Simple identity mapping
+            return np.arange(N, dtype=np.int32)
+        else:
+            # Gray-code ordering: sort by first dimension, assign in Gray-code order
+            from gray_tunneled_hashing.data.synthetic_generators import generate_hypercube_vertices
+            
+            # Sort embeddings by first dimension
+            embedding_scores = embeddings[:, 0]
+            sorted_indices = np.argsort(embedding_scores)
+            
+            # Generate Gray-code sequence
+            gray_sequence = self._generate_gray_code_sequence(self.n_bits)
+            
+            # Create permutation: pi[vertex_idx] = embedding_index
+            pi = np.zeros(N, dtype=np.int32)
+            for i, vertex_idx in enumerate(gray_sequence):
+                pi[vertex_idx] = sorted_indices[i]
+            
+            return pi
+    
+    def _generate_gray_code_sequence(self, n_bits: int) -> np.ndarray:
+        """Generate Gray code sequence recursively."""
+        if n_bits == 0:
+            return np.array([0], dtype=np.int32)
+        if n_bits == 1:
+            return np.array([0, 1], dtype=np.int32)
+        
+        # Recursive Gray code generation
+        gray_n_minus_1 = self._generate_gray_code_sequence(n_bits - 1)
+        gray_n = np.concatenate([
+            gray_n_minus_1,
+            gray_n_minus_1[::-1] + (2 ** (n_bits - 1))
+        ])
+        return gray_n.astype(np.int32)
+    
+    def fit_with_traffic(
+        self,
+        bucket_embeddings: np.ndarray,
+        pi: np.ndarray,
+        w: np.ndarray,
+        use_semantic_distances: bool = True,
+        optimize_j_phi_directly: bool = True,
+    ) -> "GrayTunneledHasher":
+        """
+        Fit with distribution-aware traffic weights.
+        
+        This method integrates traffic statistics (query prior π_i and neighbor weights w_ij)
+        into the optimization. It can use either:
+        1. QAP optimization (legacy, may not guarantee J(φ*) ≤ J(φ₀))
+        2. Direct J(φ) optimization (recommended, guarantees J(φ*) ≤ J(φ₀))
+        
+        Args:
+            bucket_embeddings: Bucket representative embeddings of shape (K, dim) where K <= 2**n_bits
+            pi: Query prior of shape (K,) - fraction of queries in each bucket
+            w: Neighbor weights of shape (K, K) - probability neighbor in j given query in i
+            use_semantic_distances: If True, multiply by semantic distance (default: True)
+            optimize_j_phi_directly: If True, optimize J(φ) directly instead of QAP (default: True)
+            
+        Returns:
+            self (for method chaining)
+        """
+        from gray_tunneled_hashing.distribution.traffic_stats import build_weighted_distance_matrix
+        from gray_tunneled_hashing.distribution.j_phi_objective import (
+            compute_j_phi_cost,
+            hill_climb_j_phi,
+        )
+        from gray_tunneled_hashing.data.synthetic_generators import generate_hypercube_vertices
+        
+        if bucket_embeddings.ndim != 2:
+            raise ValueError(f"Expected 2D bucket_embeddings, got shape {bucket_embeddings.shape}")
+        if pi.ndim != 1:
+            raise ValueError(f"Expected 1D pi, got shape {pi.shape}")
+        if w.ndim != 2 or w.shape[0] != w.shape[1]:
+            raise ValueError(f"Expected square w, got shape {w.shape}")
+        if bucket_embeddings.shape[0] != pi.shape[0] or pi.shape[0] != w.shape[0]:
+            raise ValueError(
+                f"Shape mismatch: bucket_embeddings={bucket_embeddings.shape}, "
+                f"pi={pi.shape}, w={w.shape}"
+            )
+        
+        K_original = len(pi)  # Store original K before any padding/subsampling
+        
+        # Get bucket_to_code - check if it was stored (from pipeline)
+        if hasattr(self, 'bucket_to_code_'):
+            bucket_to_code_original = self.bucket_to_code_
+        else:
+            # Fallback: create dummy mapping (not recommended)
+            vertices = generate_hypercube_vertices(self.n_bits)
+            N_hypercube = len(vertices)
+            bucket_to_code_original = vertices[:min(K_original, N_hypercube)]
+            if K_original > N_hypercube:
+                padding = np.tile(vertices[-1:], (K_original - N_hypercube, 1))
+                bucket_to_code_original = np.vstack([bucket_to_code_original, padding])
+        
+        if optimize_j_phi_directly:
+            # Direct J(φ) optimization
+            # Use original K for pi, w, bucket_to_code (no padding for J(φ) computation)
+            # But we still need to pad for permutation space (N = 2**n_bits)
+            
+            # Calculate semantic distances if requested
+            semantic_distances = None
+            semantic_weight = 0.0
+            if use_semantic_distances:
+                # Compute semantic distance matrix between bucket embeddings
+                K = len(bucket_embeddings)
+                semantic_distances = np.zeros((K, K), dtype=np.float64)
+                for i in range(K):
+                    for j in range(K):
+                        # Squared L2 distance (normalized by dimension for stability)
+                        d_semantic = np.linalg.norm(bucket_embeddings[i] - bucket_embeddings[j]) ** 2
+                        semantic_distances[i, j] = d_semantic
+                
+                # Normalize semantic distances to be on similar scale as Hamming distances
+                # Hamming distances are in [0, n_bits], so normalize semantic to similar range
+                if semantic_distances.max() > 0:
+                    semantic_distances = semantic_distances / semantic_distances.max() * self.n_bits
+                
+                # Set semantic weight (can be tuned, default: 0.5 to balance Hamming and semantic)
+                semantic_weight = 0.5
+            
+            # Initialize permutation (identity or random)
+            if self.init_strategy == "random":
+                pi_init = np.random.permutation(self.N).astype(np.int32)
+            else:
+                pi_init = np.arange(self.N, dtype=np.int32)
+            
+            # Store initial permutation before optimization
+            self.pi_init_ = pi_init.copy()
+            
+            # Optimize J(φ) directly using original K (no padding)
+            # The permutation space is still N, but we only optimize over first K buckets
+            pi_optimized, cost, initial_cost, cost_history = hill_climb_j_phi(
+                pi_init=pi_init,
+                pi=pi,  # Original K
+                w=w,    # Original K x K
+                bucket_to_code=bucket_to_code_original,  # Original K
+                n_bits=self.n_bits,
+                max_iter=self.max_two_swap_iters,
+                sample_size=self.two_swap_sample_size,
+                random_state=self.random_state,
+                bucket_to_embedding_idx=None,  # bucket i maps to embedding i
+                semantic_distances=semantic_distances,
+                semantic_weight=semantic_weight,
+            )
+            
+            # Store results
+            self.pi_ = pi_optimized
+            self.cost_ = cost
+            self.initial_cost_ = initial_cost  # J(φ₀)
+            if self.track_history:
+                self.cost_history_ = [
+                    {"cost": c, "step": "j_phi_optimization", "iteration": i, "timestamp": time.time()}
+                    for i, c in enumerate(cost_history)
+                ]
+            self.is_fitted = True
+            
+            return self
+        else:
+            # Legacy QAP optimization (may not guarantee J(φ*) ≤ J(φ₀))
+            from gray_tunneled_hashing.distribution.traffic_stats import build_weighted_distance_matrix
+            
+            # Build weighted distance matrix
+            D_weighted = build_weighted_distance_matrix(
+                pi=pi,
+                w=w,
+                bucket_embeddings=bucket_embeddings,
+                use_semantic_distances=use_semantic_distances,
+            )
+            
+            # Pad to 2**n_bits if needed
+            if K < self.N:
+                D_padded = np.zeros((self.N, self.N), dtype=np.float64)
+                D_padded[:K, :K] = D_weighted
+                dummy_weight = np.mean(D_weighted[D_weighted > 0]) * 0.01 if np.any(D_weighted > 0) else 1e-6
+                D_padded[K:, :] = dummy_weight
+                D_padded[:, K:] = dummy_weight
+                D_padded[K:, K:] = 0
+                
+                embeddings_padded = np.zeros((self.N, bucket_embeddings.shape[1]), dtype=bucket_embeddings.dtype)
+                embeddings_padded[:K] = bucket_embeddings
+                embeddings_padded[K:] = bucket_embeddings[-1:]
+                D_weighted = D_padded
+                bucket_embeddings = embeddings_padded
+            elif K > self.N:
+                top_indices = np.argsort(pi)[-self.N:]
+                D_weighted = D_weighted[np.ix_(top_indices, top_indices)]
+                bucket_embeddings = bucket_embeddings[top_indices]
+            
+            return self.fit(embeddings=bucket_embeddings, D=D_weighted)
 
+    def get_initial_permutation(self) -> Optional[np.ndarray]:
+        """
+        Get the initial permutation used for optimization.
+        
+        Returns:
+            Initial permutation array of shape (N,) or None if not fitted
+        """
+        if hasattr(self, 'pi_init_'):
+            return self.pi_init_.copy()
+        return None
+    
     def get_assignment(self) -> np.ndarray:
         """
         Get the final permutation (assignment of embeddings to hypercube vertices).

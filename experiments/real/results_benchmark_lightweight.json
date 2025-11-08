@@ -1,0 +1,68 @@
+{
+  "args": {
+    "n_bits": 6,
+    "n_codes": 16,
+    "k": 5,
+    "traffic_scenario": "skewed",
+    "n_runs": 2,
+    "n_workers": 2,
+    "output": "experiments/real/results_benchmark_lightweight.json"
+  },
+  "summary": {
+    "n_total": 4,
+    "n_violations": 0,
+    "violation_rate": 0.0,
+    "mean_improvement": 17.66002943057756,
+    "std_improvement": 1.5443418606104835
+  },
+  "results": [
+    {
+      "run_id": 1,
+      "n_bits": 6,
+      "n_codes": 16,
+      "traffic_scenario": "skewed",
+      "method": "distribution_aware_semantic",
+      "j_phi_star": 2.4360005252765666,
+      "j_phi_0": 2.904000110042519,
+      "guarantee_holds": true,
+      "improvement": 16.115687569967076,
+      "build_time": 42.673306941986084
+    },
+    {
+      "run_id": 0,
+      "n_bits": 6,
+      "n_codes": 16,
+      "traffic_scenario": "skewed",
+      "method": "distribution_aware_semantic",
+      "j_phi_star": 2.356000595200036,
+      "j_phi_0": 2.916000076800045,
+      "guarantee_holds": true,
+      "improvement": 19.204371291188043,
+      "build_time": 48.11278414726257
+    },
+    {
+      "run_id": 0,
+      "n_bits": 6,
+      "n_codes": 16,
+      "traffic_scenario": "skewed",
+      "method": "distribution_aware_pure",
+      "j_phi_star": 2.356000595200036,
+      "j_phi_0": 2.916000076800045,
+      "guarantee_holds": true,
+      "improvement": 19.204371291188043,
+      "build_time": 43.6607551574707
+    },
+    {
+      "run_id": 1,
+      "n_bits": 6,
+      "n_codes": 16,
+      "traffic_scenario": "skewed",
+      "method": "distribution_aware_pure",
+      "j_phi_star": 2.4360005252765666,
+      "j_phi_0": 2.904000110042519,
+      "guarantee_holds": true,
+      "improvement": 16.115687569967076,
+      "build_time": 39.03815984725952
+    }
+  ]
+}

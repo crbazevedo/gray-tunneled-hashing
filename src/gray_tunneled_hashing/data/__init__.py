@@ -7,6 +7,11 @@ from gray_tunneled_hashing.data.synthetic_generators import (
     sample_noisy_embeddings,
     PlantedModelConfig,
 )
+from gray_tunneled_hashing.data.real_datasets import (
+    load_embeddings,
+    load_queries_and_ground_truth,
+    list_available_datasets,
+)
 
 __all__ = [
     "generate_synthetic_embeddings",
@@ -14,5 +19,8 @@ __all__ = [
     "generate_planted_phi",
     "sample_noisy_embeddings",
     "PlantedModelConfig",
+    "load_embeddings",
+    "load_queries_and_ground_truth",
+    "list_available_datasets",
 ]
 
