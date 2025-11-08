@@ -1,7 +1,7 @@
 """Distribution-aware GTH integration pipeline."""
 
 import numpy as np
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 
 from gray_tunneled_hashing.distribution.traffic_stats import (
@@ -9,6 +9,7 @@ from gray_tunneled_hashing.distribution.traffic_stats import (
     build_weighted_distance_matrix,
 )
 from gray_tunneled_hashing.algorithms.gray_tunneled_hasher import GrayTunneledHasher
+from gray_tunneled_hashing.binary.lsh_families import LSHFamily
 
 
 @dataclass
@@ -94,6 +95,7 @@ def build_distribution_aware_index(
     mode: str = "full",
     random_state: Optional[int] = None,
     collapse_threshold: float = 0.01,
+    lsh_family: Optional[Any] = None,
 ) -> DistributionAwareIndex:
     """
     Build a distribution-aware Gray-Tunneled Hashing index.
@@ -126,11 +128,21 @@ def build_distribution_aware_index(
         DistributionAwareIndex with all components
     """
     # Step 1: Collect traffic statistics
+    # If lsh_family is provided, use it as encoder
+    actual_encoder = encoder
+    if lsh_family is not None:
+        if not isinstance(lsh_family, LSHFamily):
+            raise TypeError(
+                f"lsh_family must be an LSHFamily instance, got {type(lsh_family)}"
+            )
+        # Create encoder function from LSH family
+        actual_encoder = lambda emb: lsh_family.hash(emb)
+    
     traffic_stats = collect_traffic_stats(
         queries=queries,
         ground_truth_neighbors=ground_truth_neighbors,
         base_embeddings=base_embeddings,
-        encoder=encoder,
+        encoder=actual_encoder,
         collapse_threshold=collapse_threshold,
     )
     
@@ -167,7 +179,7 @@ def build_distribution_aware_index(
         bucket_embeddings = np.zeros((K, base_embeddings.shape[1]), dtype=base_embeddings.dtype)
         
         # Encode base embeddings to get their bucket codes
-        base_codes = encoder(base_embeddings)
+        base_codes = actual_encoder(base_embeddings)
         
         for bucket_idx in range(K):
             bucket_code = bucket_to_code[bucket_idx]
@@ -188,7 +200,7 @@ def build_distribution_aware_index(
     else:
         # Use all embeddings (not recommended for large N)
         # For each bucket, use mean embedding
-        base_codes = encoder(base_embeddings)
+        base_codes = actual_encoder(base_embeddings)
         bucket_embeddings = np.zeros((K, base_embeddings.shape[1]), dtype=base_embeddings.dtype)
         
         for bucket_idx in range(K):
