@@ -293,18 +293,18 @@ def test_h4_hamming_ball(
         random_state=random_state,
     )
     
-    # Build bucket → dataset mapping
-    centroids, assignments = build_codebook_kmeans(
-        embeddings=base_embeddings,
-        n_codes=n_codes,
-        random_state=random_state,
-    )
+    # Build bucket → dataset mapping using LSH codes (not codebook)
+    # Encode base embeddings to get their LSH codes
+    base_codes_lsh = lsh.hash(base_embeddings)
     
     bucket_to_dataset_indices = {}
-    for dataset_idx, bucket_idx in enumerate(assignments):
-        if bucket_idx not in bucket_to_dataset_indices:
-            bucket_to_dataset_indices[bucket_idx] = []
-        bucket_to_dataset_indices[bucket_idx].append(dataset_idx)
+    for dataset_idx, code in enumerate(base_codes_lsh):
+        code_tuple = tuple(code.astype(int).tolist())
+        if code_tuple in index_obj.code_to_bucket:
+            bucket_idx = index_obj.code_to_bucket[code_tuple]
+            if bucket_idx not in bucket_to_dataset_indices:
+                bucket_to_dataset_indices[bucket_idx] = []
+            bucket_to_dataset_indices[bucket_idx].append(dataset_idx)
     
     # Encode queries
     query_codes = lsh.hash(queries)
@@ -417,18 +417,18 @@ def test_end_to_end_recall(
         random_state=random_state,
     )
     
-    # Build bucket → dataset mapping
-    centroids, assignments = build_codebook_kmeans(
-        embeddings=base_embeddings,
-        n_codes=n_codes,
-        random_state=random_state,
-    )
+    # Build bucket → dataset mapping using LSH codes (not codebook)
+    # Encode base embeddings to get their LSH codes
+    base_codes_lsh = lsh.hash(base_embeddings)
     
     bucket_to_dataset_indices = {}
-    for dataset_idx, bucket_idx in enumerate(assignments):
-        if bucket_idx not in bucket_to_dataset_indices:
-            bucket_to_dataset_indices[bucket_idx] = []
-        bucket_to_dataset_indices[bucket_idx].append(dataset_idx)
+    for dataset_idx, code in enumerate(base_codes_lsh):
+        code_tuple = tuple(code.astype(int).tolist())
+        if code_tuple in index_obj.code_to_bucket:
+            bucket_idx = index_obj.code_to_bucket[code_tuple]
+            if bucket_idx not in bucket_to_dataset_indices:
+                bucket_to_dataset_indices[bucket_idx] = []
+            bucket_to_dataset_indices[bucket_idx].append(dataset_idx)
     
     # Query with Hamming ball
     all_retrieved = []

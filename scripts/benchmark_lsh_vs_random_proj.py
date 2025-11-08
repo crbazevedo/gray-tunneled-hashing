@@ -152,23 +152,23 @@ def run_experiment(
             query_codes = encoder(queries)
         
         # Map base embeddings to buckets for recall calculation
-        # We need to know which embeddings belong to which bucket
-        from gray_tunneled_hashing.binary.codebooks import build_codebook_kmeans, find_nearest_centroids
+        # We need to map base embeddings to buckets using LSH codes (not codebook)
+        # Encode base embeddings to get their LSH codes
+        if lsh is not None:
+            base_codes_lsh = lsh.hash(base_embeddings)
+        else:
+            base_codes_lsh = encoder(base_embeddings)
         
-        # Get codebook assignments for base embeddings
-        centroids, assignments = build_codebook_kmeans(
-            embeddings=base_embeddings,
-            n_codes=n_codes,
-            random_state=random_state,
-        )
-        
-        # Map bucket indices to dataset indices
+        # Map LSH codes to bucket indices using code_to_bucket
         # bucket_to_dataset_indices[bucket_idx] = list of dataset indices in that bucket
         bucket_to_dataset_indices = {}
-        for dataset_idx, bucket_idx in enumerate(assignments):
-            if bucket_idx not in bucket_to_dataset_indices:
-                bucket_to_dataset_indices[bucket_idx] = []
-            bucket_to_dataset_indices[bucket_idx].append(dataset_idx)
+        for dataset_idx, code in enumerate(base_codes_lsh):
+            code_tuple = tuple(code.astype(int).tolist())
+            if code_tuple in index_obj.code_to_bucket:
+                bucket_idx = index_obj.code_to_bucket[code_tuple]
+                if bucket_idx not in bucket_to_dataset_indices:
+                    bucket_to_dataset_indices[bucket_idx] = []
+                bucket_to_dataset_indices[bucket_idx].append(dataset_idx)
         
         # Apply GTH permutation and expand Hamming ball
         all_retrieved = []
