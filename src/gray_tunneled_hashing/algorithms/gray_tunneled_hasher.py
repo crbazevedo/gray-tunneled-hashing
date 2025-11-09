@@ -2,7 +2,7 @@
 
 import numpy as np
 import time
-from typing import Optional, Literal, Dict, Any
+from typing import Optional, Literal, Dict, Any, Callable, Tuple
 
 from gray_tunneled_hashing.algorithms.qap_objective import (
     generate_hypercube_edges,
@@ -383,6 +383,11 @@ class GrayTunneledHasher:
         bucket_embeddings: np.ndarray,
         pi: np.ndarray,
         w: np.ndarray,
+        queries: Optional[np.ndarray] = None,  # NEW: Required for real embeddings objective
+        base_embeddings: Optional[np.ndarray] = None,  # NEW: Required for real embeddings objective
+        ground_truth_neighbors: Optional[np.ndarray] = None,  # NEW: Required for real embeddings objective
+        encoder: Optional[Callable] = None,  # NEW: LSH encoder function
+        code_to_bucket: Optional[Dict] = None,  # NEW: Mapping from codes to buckets
         use_semantic_distances: bool = True,
         optimize_j_phi_directly: bool = True,
         optimization_method: Literal["hill_climb", "simulated_annealing", "memetic"] = "hill_climb",
@@ -390,6 +395,8 @@ class GrayTunneledHasher:
         cosine_weight: float = 1.0,
         hamming_weight: float = 1.0,
         distance_metric: str = "cosine",
+        use_real_embeddings_objective: bool = True,  # NEW: Use real embeddings objective (Sprint 8)
+        sample_size_pairs: Optional[int] = None,  # NEW: Sample size for pairs in cost computation
     ) -> "GrayTunneledHasher":
         """
         Fit with distribution-aware traffic weights.
@@ -468,36 +475,76 @@ class GrayTunneledHasher:
                 # Set semantic weight (can be tuned, default: 0.5 to balance Hamming and semantic)
                 semantic_weight = 0.5
             
-            # Initialize permutation (identity or random)
-            # FIX 1: Constrain permutation to valid bucket indices (0..K-1)
-            # When K < N, we must ensure all embedding_idx < K to correspond to valid buckets
+            # Initialize permutation as array of binary codes (K, n_bits)
+            # NEW: permutation[bucket_idx] = novo_código_binário
             K_actual = len(pi)  # Number of actual buckets
             
             if self.init_strategy == "random":
-                # Random initialization: ensure all values are in [0, K_actual-1)
-                # Strategy: create permutation of K values, then distribute across N vertices
-                # This ensures all vertices map to valid buckets while maintaining randomness
-                if K_actual >= self.N:
-                    # K >= N: use full permutation (all values valid)
-                    pi_init = np.random.permutation(self.N).astype(np.int32)
-                else:
-                    # K < N: create permutation of K values, repeat to fill N positions
-                    # Use modulo to ensure all values < K
-                    base_perm = np.random.permutation(K_actual).astype(np.int32)
-                    # Distribute base_perm across N vertices using modulo
-                    # This ensures all values are in [0, K_actual-1)
-                    pi_init = np.array([base_perm[i % K_actual] for i in range(self.N)], dtype=np.int32)
-                    # Shuffle to break any pattern while maintaining validity
-                    np.random.shuffle(pi_init)
+                # Random initialization: generate K random binary codes
+                # Each code is a random bit vector of length n_bits
+                pi_init = np.random.randint(0, 2, size=(K_actual, self.n_bits), dtype=np.uint8)
             else:
-                # Identity: map vertex i to embedding (i % K_actual)
-                # This ensures all embedding_idx < K_actual, mapping to valid buckets
-                pi_init = (np.arange(self.N, dtype=np.int32) % K_actual).astype(np.int32)
+                # Identity: use original bucket codes as initial permutation
+                # This means no permutation initially (each bucket keeps its original code)
+                pi_init = bucket_to_code_original.copy().astype(np.uint8)
+                # Ensure shape is (K, n_bits)
+                if pi_init.shape != (K_actual, self.n_bits):
+                    # If bucket_to_code_original has wrong shape, generate identity codes
+                    from gray_tunneled_hashing.data.synthetic_generators import generate_hypercube_vertices
+                    vertices = generate_hypercube_vertices(self.n_bits)
+                    # Use first K vertices as identity codes
+                    pi_init = vertices[:K_actual].copy().astype(np.uint8)
             
             # Store initial permutation before optimization
             self.pi_init_ = pi_init.copy()
             
-            # Choose optimization method
+            # NEW (Sprint 8): Use real embeddings objective if requested and parameters provided
+            if use_real_embeddings_objective and queries is not None and base_embeddings is not None and \
+               ground_truth_neighbors is not None and encoder is not None and code_to_bucket is not None:
+                # Use new objective over real embeddings
+                from gray_tunneled_hashing.distribution.j_phi_objective import (
+                    hill_climb_j_phi_real_embeddings,
+                )
+                
+                if optimization_method == "hill_climb":
+                    pi_optimized, cost, initial_cost, cost_history = hill_climb_j_phi_real_embeddings(
+                        pi_init=pi_init,
+                        pi=pi,
+                        w=w,
+                        queries=queries,
+                        base_embeddings=base_embeddings,
+                        ground_truth_neighbors=ground_truth_neighbors,
+                        encoder=encoder,
+                        code_to_bucket=code_to_bucket,
+                        n_bits=self.n_bits,
+                        max_iter=self.max_two_swap_iters,
+                        sample_size=self.two_swap_sample_size,
+                        random_state=self.random_state,
+                        sample_size_pairs=sample_size_pairs,
+                        verbose=self.track_history,
+                    )
+                else:
+                    # For now, only hill_climb is supported with real embeddings objective
+                    # TODO: Implement SA and memetic with real embeddings
+                    raise ValueError(
+                        f"optimization_method '{optimization_method}' not yet supported "
+                        f"with use_real_embeddings_objective=True. Use 'hill_climb'."
+                    )
+                
+                # Store results
+                self.pi_ = pi_optimized
+                self.cost_ = cost
+                self.initial_cost_ = initial_cost
+                if self.track_history:
+                    self.cost_history_ = [
+                        {"cost": c, "step": "j_phi_real_optimization", "iteration": i, "timestamp": time.time()}
+                        for i, c in enumerate(cost_history)
+                    ]
+                self.is_fitted = True
+                
+                return self
+            
+            # Choose optimization method (legacy: old objective)
             if use_cosine_objective:
                 # Use cosine-based objective
                 from gray_tunneled_hashing.distribution.cosine_objective import (
@@ -689,11 +736,11 @@ class GrayTunneledHasher:
     
     def get_assignment(self) -> np.ndarray:
         """
-        Get the final permutation (assignment of embeddings to hypercube vertices).
+        Get the final permutation (assignment of buckets to binary codes).
         
         Returns:
-            Permutation array of shape (N,) where pi[u] is the index of the
-            embedding assigned to vertex u
+            Permutation array of shape (K, n_bits) where K is the number of buckets.
+            pi_[bucket_idx] is the new binary code assigned to bucket bucket_idx.
             
         Raises:
             ValueError: If hasher has not been fitted yet

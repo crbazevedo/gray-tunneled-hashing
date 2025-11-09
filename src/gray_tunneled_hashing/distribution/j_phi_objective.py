@@ -5,14 +5,438 @@ J(φ) = Σ_{i,j} π_i · w_ij · d_H(φ(c_i), φ(c_j))
 
 This is different from QAP cost which only sums over hypercube edges.
 We need to optimize J(φ) directly.
+
+NEW (Sprint 8): J(φ) computed over real embeddings:
+J(φ) = Σ_{i,j} π_i · w_ij · E[d_H(φ(h(q)), φ(h(x))) | q∈bucket_i, x∈bucket_j]
 """
 
 import numpy as np
-from typing import Optional, Tuple, Callable
+from typing import Optional, Tuple, Callable, Dict
+from collections import defaultdict
 import time
 
 from gray_tunneled_hashing.data.synthetic_generators import generate_hypercube_vertices
 from gray_tunneled_hashing.evaluation.metrics import hamming_distance
+
+
+def compute_j_phi_cost_real_embeddings(
+    permutation: np.ndarray,  # Shape (K, n_bits)
+    pi: np.ndarray,  # Shape (K,)
+    w: np.ndarray,  # Shape (K, K)
+    queries: np.ndarray,  # Shape (Q, dim)
+    base_embeddings: np.ndarray,  # Shape (N, dim)
+    ground_truth_neighbors: np.ndarray,  # Shape (Q, k)
+    encoder: Callable,  # LSH encoder
+    code_to_bucket: Dict[Tuple, int],
+    n_bits: int,
+    sample_size: Optional[int] = None,  # Se None, usa todos os pares
+) -> float:
+    """
+    Compute J(φ) using real query-neighbor pairs.
+    
+    J(φ) = Σ_{i,j} π_i · w_ij · E[d_H(φ(h(q)), φ(h(x))) | q∈bucket_i, x∈bucket_j]
+    
+    Calcula a média de distâncias Hamming entre queries e neighbors reais,
+    amostrados de cada par de buckets (i,j) conforme w_ij.
+    
+    Args:
+        permutation: Permutation array of shape (K, n_bits) where permutation[bucket_idx] = novo_código_binário
+        pi: Query prior of shape (K,)
+        w: Neighbor weights of shape (K, K)
+        queries: Query embeddings of shape (Q, dim)
+        base_embeddings: Base corpus embeddings of shape (N, dim)
+        ground_truth_neighbors: Ground truth neighbor indices of shape (Q, k)
+        encoder: Function that maps embeddings to bucket codes (LSH encoder)
+        code_to_bucket: Dictionary mapping code tuples to bucket indices
+        n_bits: Number of bits
+        sample_size: Optional maximum number of pairs to sample per bucket pair. If None, uses all pairs.
+        
+    Returns:
+        J(φ) cost
+    """
+    K = len(pi)
+    cost = 0.0
+    
+    # Encode queries and base embeddings
+    query_codes = encoder(queries)  # Shape (Q, n_bits)
+    base_codes = encoder(base_embeddings)  # Shape (N, n_bits)
+    
+    # Build query_bucket -> list of query indices
+    query_bucket_to_indices = defaultdict(list)
+    for q_idx, q_code in enumerate(query_codes):
+        q_code_tuple = tuple(q_code.astype(int).tolist())
+        if q_code_tuple in code_to_bucket:
+            bucket_idx = code_to_bucket[q_code_tuple]
+            query_bucket_to_indices[bucket_idx].append(q_idx)
+    
+    # For each bucket pair (i, j), sample query-neighbor pairs
+    for i in range(K):
+        if i not in query_bucket_to_indices:
+            continue
+        
+        queries_in_i = query_bucket_to_indices[i]
+        
+        for j in range(K):
+            if w[i, j] == 0:
+                continue
+            
+            # Get neighbors for queries in bucket i that are in bucket j
+            pairs = []
+            for q_idx in queries_in_i:
+                for n_idx in ground_truth_neighbors[q_idx]:
+                    if n_idx < len(base_embeddings):
+                        n_code = base_codes[n_idx]
+                        n_code_tuple = tuple(n_code.astype(int).tolist())
+                        if n_code_tuple in code_to_bucket:
+                            n_bucket = code_to_bucket[n_code_tuple]
+                            if n_bucket == j:
+                                pairs.append((q_idx, n_idx))
+            
+            if len(pairs) == 0:
+                continue
+            
+            # Sample if needed
+            if sample_size is not None and len(pairs) > sample_size:
+                sampled_indices = np.random.choice(len(pairs), size=sample_size, replace=False)
+                pairs = [pairs[k] for k in sampled_indices]
+            
+            # Compute average Hamming distance for this bucket pair
+            hamming_dists = []
+            for q_idx, n_idx in pairs:
+                q_code = query_codes[q_idx]
+                n_code = base_codes[n_idx]
+                
+                # Apply permutation: get new codes for buckets
+                q_bucket = code_to_bucket[tuple(q_code.astype(int).tolist())]
+                n_bucket = code_to_bucket[tuple(n_code.astype(int).tolist())]
+                
+                q_code_permuted = permutation[q_bucket]  # Shape (n_bits,)
+                n_code_permuted = permutation[n_bucket]  # Shape (n_bits,)
+                
+                d_h = hamming_distance(
+                    q_code_permuted[np.newaxis, :],
+                    n_code_permuted[np.newaxis, :]
+                )[0, 0]
+                hamming_dists.append(d_h)
+            
+            avg_hamming = np.mean(hamming_dists) if len(hamming_dists) > 0 else 0.0
+            cost += pi[i] * w[i, j] * avg_hamming
+    
+    return float(cost)
+
+
+def compute_j_phi_cost_delta_swap_buckets(
+    permutation: np.ndarray,  # Shape (K, n_bits)
+    pi: np.ndarray,
+    w: np.ndarray,
+    queries: np.ndarray,
+    base_embeddings: np.ndarray,
+    ground_truth_neighbors: np.ndarray,
+    encoder: Callable,
+    code_to_bucket: Dict[Tuple, int],
+    n_bits: int,
+    bucket_i: int,
+    bucket_j: int,
+    sample_size: Optional[int] = None,
+) -> float:
+    """
+    Compute delta in J(φ) cost when swapping codes of buckets i and j.
+    
+    This is more efficient than recomputing the full cost by only computing
+    the terms that change when swapping codes of two buckets.
+    
+    Args:
+        permutation: Permutation array of shape (K, n_bits)
+        pi: Query prior of shape (K,)
+        w: Neighbor weights of shape (K, K)
+        queries: Query embeddings of shape (Q, dim)
+        base_embeddings: Base corpus embeddings of shape (N, dim)
+        ground_truth_neighbors: Ground truth neighbor indices of shape (Q, k)
+        encoder: LSH encoder function
+        code_to_bucket: Dictionary mapping code tuples to bucket indices
+        n_bits: Number of bits
+        bucket_i: First bucket index to swap
+        bucket_j: Second bucket index to swap
+        sample_size: Optional maximum number of pairs to sample per bucket pair
+        
+    Returns:
+        Delta = cost_after_swap - cost_before_swap
+    """
+    # For efficiency, we compute only the terms that change
+    # Terms that change are those involving buckets i or j
+    
+    # Encode queries and base embeddings (cache these)
+    query_codes = encoder(queries)  # Shape (Q, n_bits)
+    base_codes = encoder(base_embeddings)  # Shape (N, n_bits)
+    
+    # Build query_bucket -> list of query indices
+    query_bucket_to_indices = defaultdict(list)
+    for q_idx, q_code in enumerate(query_codes):
+        q_code_tuple = tuple(q_code.astype(int).tolist())
+        if q_code_tuple in code_to_bucket:
+            bucket_idx = code_to_bucket[q_code_tuple]
+            query_bucket_to_indices[bucket_idx].append(q_idx)
+    
+    # Compute cost before swap (only terms involving i or j)
+    cost_before = 0.0
+    
+    # Terms involving bucket i (with any bucket k)
+    for k in range(len(pi)):
+        if w[bucket_i, k] == 0 and w[k, bucket_i] == 0:
+            continue
+        
+        # Get pairs for (i, k) or (k, i)
+        pairs = []
+        if bucket_i in query_bucket_to_indices and w[bucket_i, k] > 0:
+            for q_idx in query_bucket_to_indices[bucket_i]:
+                for n_idx in ground_truth_neighbors[q_idx]:
+                    if n_idx < len(base_embeddings):
+                        n_code = base_codes[n_idx]
+                        n_code_tuple = tuple(n_code.astype(int).tolist())
+                        if n_code_tuple in code_to_bucket:
+                            n_bucket = code_to_bucket[n_code_tuple]
+                            if n_bucket == k:
+                                pairs.append((q_idx, n_idx))
+        
+        if k in query_bucket_to_indices and w[k, bucket_i] > 0:
+            for q_idx in query_bucket_to_indices[k]:
+                for n_idx in ground_truth_neighbors[q_idx]:
+                    if n_idx < len(base_embeddings):
+                        n_code = base_codes[n_idx]
+                        n_code_tuple = tuple(n_code.astype(int).tolist())
+                        if n_code_tuple in code_to_bucket:
+                            n_bucket = code_to_bucket[n_code_tuple]
+                            if n_bucket == bucket_i:
+                                pairs.append((q_idx, n_idx))
+        
+        if len(pairs) == 0:
+            continue
+        
+        # Sample if needed
+        if sample_size is not None and len(pairs) > sample_size:
+            sampled_indices = np.random.choice(len(pairs), size=sample_size, replace=False)
+            pairs = [pairs[idx] for idx in sampled_indices]
+        
+        # Compute average Hamming distance
+        hamming_dists = []
+        for q_idx, n_idx in pairs:
+            q_code = query_codes[q_idx]
+            n_code = base_codes[n_idx]
+            
+            q_bucket = code_to_bucket[tuple(q_code.astype(int).tolist())]
+            n_bucket = code_to_bucket[tuple(n_code.astype(int).tolist())]
+            
+            q_code_permuted = permutation[q_bucket]
+            n_code_permuted = permutation[n_bucket]
+            
+            d_h = hamming_distance(
+                q_code_permuted[np.newaxis, :],
+                n_code_permuted[np.newaxis, :]
+            )[0, 0]
+            hamming_dists.append(d_h)
+        
+        avg_hamming = np.mean(hamming_dists) if len(hamming_dists) > 0 else 0.0
+        
+        # Add to cost (consider both directions)
+        if w[bucket_i, k] > 0:
+            cost_before += pi[bucket_i] * w[bucket_i, k] * avg_hamming
+        if w[k, bucket_i] > 0 and k != bucket_i:
+            cost_before += pi[k] * w[k, bucket_i] * avg_hamming
+    
+    # Terms involving bucket j (with any bucket k, but skip i since already counted)
+    for k in range(len(pi)):
+        if k == bucket_i:  # Already counted
+            continue
+        if w[bucket_j, k] == 0 and w[k, bucket_j] == 0:
+            continue
+        
+        # Similar logic for (j, k) pairs
+        pairs = []
+        if bucket_j in query_bucket_to_indices and w[bucket_j, k] > 0:
+            for q_idx in query_bucket_to_indices[bucket_j]:
+                for n_idx in ground_truth_neighbors[q_idx]:
+                    if n_idx < len(base_embeddings):
+                        n_code = base_codes[n_idx]
+                        n_code_tuple = tuple(n_code.astype(int).tolist())
+                        if n_code_tuple in code_to_bucket:
+                            n_bucket = code_to_bucket[n_code_tuple]
+                            if n_bucket == k:
+                                pairs.append((q_idx, n_idx))
+        
+        if k in query_bucket_to_indices and w[k, bucket_j] > 0:
+            for q_idx in query_bucket_to_indices[k]:
+                for n_idx in ground_truth_neighbors[q_idx]:
+                    if n_idx < len(base_embeddings):
+                        n_code = base_codes[n_idx]
+                        n_code_tuple = tuple(n_code.astype(int).tolist())
+                        if n_code_tuple in code_to_bucket:
+                            n_bucket = code_to_bucket[n_code_tuple]
+                            if n_bucket == bucket_j:
+                                pairs.append((q_idx, n_idx))
+        
+        if len(pairs) == 0:
+            continue
+        
+        # Sample if needed
+        if sample_size is not None and len(pairs) > sample_size:
+            sampled_indices = np.random.choice(len(pairs), size=sample_size, replace=False)
+            pairs = [pairs[idx] for idx in sampled_indices]
+        
+        # Compute average Hamming distance
+        hamming_dists = []
+        for q_idx, n_idx in pairs:
+            q_code = query_codes[q_idx]
+            n_code = base_codes[n_idx]
+            
+            q_bucket = code_to_bucket[tuple(q_code.astype(int).tolist())]
+            n_bucket = code_to_bucket[tuple(n_code.astype(int).tolist())]
+            
+            q_code_permuted = permutation[q_bucket]
+            n_code_permuted = permutation[n_bucket]
+            
+            d_h = hamming_distance(
+                q_code_permuted[np.newaxis, :],
+                n_code_permuted[np.newaxis, :]
+            )[0, 0]
+            hamming_dists.append(d_h)
+        
+        avg_hamming = np.mean(hamming_dists) if len(hamming_dists) > 0 else 0.0
+        
+        # Add to cost
+        if w[bucket_j, k] > 0:
+            cost_before += pi[bucket_j] * w[bucket_j, k] * avg_hamming
+        if w[k, bucket_j] > 0:
+            cost_before += pi[k] * w[k, bucket_j] * avg_hamming
+    
+    # Swap codes
+    permutation_swapped = permutation.copy()
+    permutation_swapped[bucket_i], permutation_swapped[bucket_j] = \
+        permutation_swapped[bucket_j].copy(), permutation_swapped[bucket_i].copy()
+    
+    # Compute cost after swap (same logic but with swapped permutation)
+    cost_after = 0.0
+    
+    # Terms involving bucket i (with any bucket k)
+    for k in range(len(pi)):
+        if w[bucket_i, k] == 0 and w[k, bucket_i] == 0:
+            continue
+        
+        pairs = []
+        if bucket_i in query_bucket_to_indices and w[bucket_i, k] > 0:
+            for q_idx in query_bucket_to_indices[bucket_i]:
+                for n_idx in ground_truth_neighbors[q_idx]:
+                    if n_idx < len(base_embeddings):
+                        n_code = base_codes[n_idx]
+                        n_code_tuple = tuple(n_code.astype(int).tolist())
+                        if n_code_tuple in code_to_bucket:
+                            n_bucket = code_to_bucket[n_code_tuple]
+                            if n_bucket == k:
+                                pairs.append((q_idx, n_idx))
+        
+        if k in query_bucket_to_indices and w[k, bucket_i] > 0:
+            for q_idx in query_bucket_to_indices[k]:
+                for n_idx in ground_truth_neighbors[q_idx]:
+                    if n_idx < len(base_embeddings):
+                        n_code = base_codes[n_idx]
+                        n_code_tuple = tuple(n_code.astype(int).tolist())
+                        if n_code_tuple in code_to_bucket:
+                            n_bucket = code_to_bucket[n_code_tuple]
+                            if n_bucket == bucket_i:
+                                pairs.append((q_idx, n_idx))
+        
+        if len(pairs) == 0:
+            continue
+        
+        if sample_size is not None and len(pairs) > sample_size:
+            sampled_indices = np.random.choice(len(pairs), size=sample_size, replace=False)
+            pairs = [pairs[idx] for idx in sampled_indices]
+        
+        hamming_dists = []
+        for q_idx, n_idx in pairs:
+            q_code = query_codes[q_idx]
+            n_code = base_codes[n_idx]
+            
+            q_bucket = code_to_bucket[tuple(q_code.astype(int).tolist())]
+            n_bucket = code_to_bucket[tuple(n_code.astype(int).tolist())]
+            
+            q_code_permuted = permutation_swapped[q_bucket]
+            n_code_permuted = permutation_swapped[n_bucket]
+            
+            d_h = hamming_distance(
+                q_code_permuted[np.newaxis, :],
+                n_code_permuted[np.newaxis, :]
+            )[0, 0]
+            hamming_dists.append(d_h)
+        
+        avg_hamming = np.mean(hamming_dists) if len(hamming_dists) > 0 else 0.0
+        
+        if w[bucket_i, k] > 0:
+            cost_after += pi[bucket_i] * w[bucket_i, k] * avg_hamming
+        if w[k, bucket_i] > 0 and k != bucket_i:
+            cost_after += pi[k] * w[k, bucket_i] * avg_hamming
+    
+    # Terms involving bucket j
+    for k in range(len(pi)):
+        if k == bucket_i:
+            continue
+        if w[bucket_j, k] == 0 and w[k, bucket_j] == 0:
+            continue
+        
+        pairs = []
+        if bucket_j in query_bucket_to_indices and w[bucket_j, k] > 0:
+            for q_idx in query_bucket_to_indices[bucket_j]:
+                for n_idx in ground_truth_neighbors[q_idx]:
+                    if n_idx < len(base_embeddings):
+                        n_code = base_codes[n_idx]
+                        n_code_tuple = tuple(n_code.astype(int).tolist())
+                        if n_code_tuple in code_to_bucket:
+                            n_bucket = code_to_bucket[n_code_tuple]
+                            if n_bucket == k:
+                                pairs.append((q_idx, n_idx))
+        
+        if k in query_bucket_to_indices and w[k, bucket_j] > 0:
+            for q_idx in query_bucket_to_indices[k]:
+                for n_idx in ground_truth_neighbors[q_idx]:
+                    if n_idx < len(base_embeddings):
+                        n_code = base_codes[n_idx]
+                        n_code_tuple = tuple(n_code.astype(int).tolist())
+                        if n_code_tuple in code_to_bucket:
+                            n_bucket = code_to_bucket[n_code_tuple]
+                            if n_bucket == bucket_j:
+                                pairs.append((q_idx, n_idx))
+        
+        if len(pairs) == 0:
+            continue
+        
+        if sample_size is not None and len(pairs) > sample_size:
+            sampled_indices = np.random.choice(len(pairs), size=sample_size, replace=False)
+            pairs = [pairs[idx] for idx in sampled_indices]
+        
+        hamming_dists = []
+        for q_idx, n_idx in pairs:
+            q_code = query_codes[q_idx]
+            n_code = base_codes[n_idx]
+            
+            q_bucket = code_to_bucket[tuple(q_code.astype(int).tolist())]
+            n_bucket = code_to_bucket[tuple(n_code.astype(int).tolist())]
+            
+            q_code_permuted = permutation_swapped[q_bucket]
+            n_code_permuted = permutation_swapped[n_bucket]
+            
+            d_h = hamming_distance(
+                q_code_permuted[np.newaxis, :],
+                n_code_permuted[np.newaxis, :]
+            )[0, 0]
+            hamming_dists.append(d_h)
+        
+        avg_hamming = np.mean(hamming_dists) if len(hamming_dists) > 0 else 0.0
+        
+        if w[bucket_j, k] > 0:
+            cost_after += pi[bucket_j] * w[bucket_j, k] * avg_hamming
+        if w[k, bucket_j] > 0:
+            cost_after += pi[k] * w[k, bucket_j] * avg_hamming
+    
+    return float(cost_after - cost_before)
 
 
 def compute_j_phi_0(
@@ -384,6 +808,130 @@ def hill_climb_j_phi(
                 # This shouldn't happen since we check in candidate evaluation
                 # But if it does, skip the swap
                 continue
+        else:
+            # No improvement found
+            if verbose:
+                print(f"  No improvement found at iteration {iteration}, stopping.")
+            break
+        
+        # Print progress periodically
+        current_time = time.time()
+        if verbose or (current_time - last_print_time >= print_interval):
+            elapsed = current_time - last_print_time
+            improvement = ((initial_cost - cost) / initial_cost * 100) if initial_cost > 0 else 0
+            delta_str = f"{best_delta:.4f}" if best_swap is not None else "0.0000"
+            print(f"  [Iter {iteration:3d}] cost={cost:.4f} ({improvement:.1f}% improvement), "
+                  f"delta={delta_str}, time={elapsed:.1f}s")
+            last_print_time = current_time
+        
+        # Call progress callback if provided
+        if progress_callback is not None:
+            progress_callback(iteration, cost, best_delta if best_swap is not None else 0.0)
+    
+    return perm, cost, initial_cost, cost_history
+
+
+def hill_climb_j_phi_real_embeddings(
+    pi_init: np.ndarray,  # Shape (K, n_bits) - NEW
+    pi: np.ndarray,  # Shape (K,)
+    w: np.ndarray,  # Shape (K, K)
+    queries: np.ndarray,  # Shape (Q, dim)
+    base_embeddings: np.ndarray,  # Shape (N, dim)
+    ground_truth_neighbors: np.ndarray,  # Shape (Q, k)
+    encoder: Callable,
+    code_to_bucket: Dict[Tuple, int],
+    n_bits: int,
+    max_iter: int = 100,
+    sample_size: int = 256,
+    random_state: Optional[int] = None,
+    sample_size_pairs: Optional[int] = None,  # Sample size for pairs in cost computation
+    verbose: bool = False,
+    progress_callback: Optional[Callable[[int, float, float], None]] = None,
+) -> Tuple[np.ndarray, float, float, list]:
+    """
+    Hill climb to minimize J(φ) using real embeddings and 2-swap moves on bucket codes.
+    
+    NEW (Sprint 8): Works with permutation as (K, n_bits) array where
+    permutation[bucket_idx] = novo_código_binário.
+    
+    This guarantees that the final cost is <= initial cost (monotonic improvement).
+    
+    Args:
+        pi_init: Initial permutation of shape (K, n_bits) - codes for each bucket
+        pi: Query prior of shape (K,)
+        w: Neighbor weights of shape (K, K)
+        queries: Query embeddings of shape (Q, dim)
+        base_embeddings: Base corpus embeddings of shape (N, dim)
+        ground_truth_neighbors: Ground truth neighbor indices of shape (Q, k)
+        encoder: LSH encoder function
+        code_to_bucket: Dictionary mapping code tuples to bucket indices
+        n_bits: Number of bits
+        max_iter: Maximum iterations
+        sample_size: Number of bucket pairs to sample for swaps per iteration
+        random_state: Random seed
+        sample_size_pairs: Optional maximum number of query-neighbor pairs to sample per bucket pair
+        verbose: If True, print progress
+        progress_callback: Optional callback function(iteration, cost, delta)
+        
+    Returns:
+        (best_permutation, best_cost, initial_cost, cost_history)
+        where permutation is shape (K, n_bits)
+    """
+    if random_state is not None:
+        np.random.seed(random_state)
+    
+    K = len(pi)
+    perm = pi_init.copy()  # Shape (K, n_bits)
+    
+    # Compute initial cost
+    initial_cost = compute_j_phi_cost_real_embeddings(
+        perm, pi, w, queries, base_embeddings, ground_truth_neighbors,
+        encoder, code_to_bucket, n_bits, sample_size=sample_size_pairs
+    )
+    cost = initial_cost
+    cost_history = [initial_cost]
+    
+    last_print_time = time.time()
+    print_interval = 10.0  # Print every 10 seconds
+    
+    for iteration in range(max_iter):
+        iter_start_time = time.time()
+        
+        # Sample random 2-swaps of bucket codes
+        candidates = []
+        for _ in range(sample_size):
+            i, j = np.random.choice(K, size=2, replace=False)
+            candidates.append((i, j))
+        
+        # Evaluate all candidates
+        best_delta = 0.0
+        best_swap = None
+        
+        for bucket_i, bucket_j in candidates:
+            # Compute delta efficiently
+            delta = compute_j_phi_cost_delta_swap_buckets(
+                perm, pi, w, queries, base_embeddings, ground_truth_neighbors,
+                encoder, code_to_bucket, n_bits, bucket_i, bucket_j,
+                sample_size=sample_size_pairs
+            )
+            if delta < best_delta:
+                best_delta = delta
+                best_swap = (bucket_i, bucket_j)
+        
+        # Apply best improving swap
+        if best_swap is not None:
+            bucket_i, bucket_j = best_swap
+            # Swap codes of buckets i and j
+            perm[bucket_i], perm[bucket_j] = perm[bucket_j].copy(), perm[bucket_i].copy()
+            cost += best_delta
+            
+            # Validate monotonicity
+            if cost > initial_cost + 1e-10:
+                raise ValueError(
+                    f"Monotonicity violated: cost {cost:.6f} > initial_cost {initial_cost:.6f}"
+                )
+            
+            cost_history.append(cost)
         else:
             # No improvement found
             if verbose:

@@ -240,12 +240,20 @@ def build_distribution_aware_index(
     hasher.bucket_to_code_ = bucket_to_code
     
     # Fit with weighted distance matrix (use direct J(φ) optimization for guarantee)
+    # NEW (Sprint 8): Pass queries, base_embeddings, ground_truth_neighbors, encoder, code_to_bucket
+    # for real embeddings objective
     hasher.fit_with_traffic(
         bucket_embeddings=bucket_embeddings,
         pi=pi,
         w=w,
+        queries=queries,
+        base_embeddings=base_embeddings,
+        ground_truth_neighbors=ground_truth_neighbors,
+        encoder=actual_encoder,
+        code_to_bucket=code_to_bucket,
         use_semantic_distances=use_semantic_distances,
         optimize_j_phi_directly=True,  # Use direct optimization to guarantee J(φ*) ≤ J(φ₀)
+        use_real_embeddings_objective=True,  # NEW: Use real embeddings objective by default
     )
     
     # Store traffic stats for later use
