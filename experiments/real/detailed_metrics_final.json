@@ -1,0 +1,43 @@
+{
+  "configuration": {
+    "n_samples": 100,
+    "n_queries": 20,
+    "dim": 16,
+    "n_bits": 6,
+    "n_codes": 16,
+    "k": 5,
+    "hamming_radius": 1
+  },
+  "baseline": {
+    "recall": 0.13,
+    "unique_codes": 44,
+    "coverage_rate": 1.0,
+    "total_buckets": 44
+  },
+  "gth": {
+    "recall": 0.02,
+    "coverage_rate": 1.0,
+    "mapped_embeddings": 100,
+    "total_buckets": 48,
+    "populated_buckets": 48,
+    "empty_buckets": 0,
+    "invalid_bucket_indices": 0,
+    "invalid_bucket_rate": 0.0,
+    "consistency_rate": 1.0,
+    "avg_candidates_per_query": 6.95,
+    "avg_invalid_buckets_per_query": 0.0,
+    "avg_buckets_not_in_code_per_query": 0.0,
+    "bucket_size_stats": {
+      "min": 1,
+      "max": 13,
+      "mean": 2.272727272727273,
+      "std": 2.125212677738356
+    }
+  },
+  "comparison": {
+    "recall_difference": -0.11,
+    "recall_ratio": 0.15384615384615385,
+    "coverage_difference": 0.0,
+    "bucket_count_ratio": 1.0909090909090908
+  }
+}

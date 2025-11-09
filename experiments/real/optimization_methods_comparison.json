@@ -1,0 +1,14 @@
+{
+  "configuration": {
+    "n_samples": 500,
+    "n_queries": 50,
+    "dim": 128,
+    "n_bits": 6,
+    "k": 10,
+    "hamming_radius": 1,
+    "max_iter": 20
+  },
+  "results": [],
+  "best_recall": 0.0,
+  "best_method": null
+}

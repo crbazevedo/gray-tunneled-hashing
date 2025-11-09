@@ -126,11 +126,16 @@ def collect_traffic_stats(
                 n_bucket = code_to_tuple(n_code)
                 neighbor_pair_counts[(q_bucket, n_bucket)] += 1
     
-    # Get all unique buckets
+    # Get all unique buckets from queries and neighbors
     all_buckets = set(query_bucket_counts.keys())
     for (q_b, n_b) in neighbor_pair_counts.keys():
         all_buckets.add(q_b)
         all_buckets.add(n_b)
+    
+    # CRITICAL FIX: Include all base embedding codes to ensure 100% coverage
+    # This ensures that all base embeddings can be retrieved, not just those seen in queries
+    base_bucket_codes = set(code_to_tuple(code) for code in base_codes)
+    all_buckets.update(base_bucket_codes)
     
     # Filter by query traffic (collapse low-traffic buckets)
     total_queries = sum(query_bucket_counts.values())
@@ -144,6 +149,10 @@ def collect_traffic_stats(
     for (q_b, n_b) in neighbor_pair_counts.keys():
         if q_b in significant_buckets:
             significant_buckets.add(n_b)
+    
+    # FIX 2: Always include all base embedding buckets to ensure 100% coverage
+    # This is critical for recall - all base embeddings must be retrievable
+    significant_buckets.update(base_bucket_codes)
     
     # Create mapping: bucket (tuple) -> bucket_idx
     bucket_list = sorted(significant_buckets)

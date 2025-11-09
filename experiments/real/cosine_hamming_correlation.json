@@ -1,0 +1,18 @@
+{
+  "configuration": {
+    "n_samples": 500,
+    "n_queries": 50,
+    "dim": 128,
+    "n_bits": 6,
+    "k": 10
+  },
+  "correlation_analysis": {
+    "pearson_correlation": 0.1725453775122415,
+    "cosine_mean": 1.0002386569976807,
+    "cosine_std": 0.0870668962597847,
+    "hamming_mean": 3.0476190476190474,
+    "hamming_std": 1.1741740958036144,
+    "scale_factor": 13.485884374472107
+  },
+  "recommendations": {
+    "use_cosine_objective": 

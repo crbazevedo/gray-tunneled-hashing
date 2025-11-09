@@ -1,0 +1,308 @@
+[
+  {
+    "method": "baseline_hyperplane",
+    "n_bits": 8,
+    "n_codes": 32,
+    "k": 5,
+    "hamming_radius": 1,
+    "n_runs": 3,
+    "recall_mean": 0.14,
+    "recall_std": 0.03559026084010437,
+    "recall_min": 0.11000000000000001,
+    "recall_max": 0.19,
+    "build_time_mean": 0.0002943674723307292,
+    "build_time_std": 4.8010553701000194e-05,
+    "search_time_mean": 0.0,
+    "search_time_std": 0.0,
+    "runs": [
+      {
+        "method": "baseline_hyperplane",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.12000000000000002,
+        "build_time": 0.0003581047058105469,
+        "search_time": 0.0,
+        "run": 0
+      },
+      {
+        "method": "baseline_hyperplane",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.11000000000000001,
+        "build_time": 0.0002422332763671875,
+        "search_time": 0.0,
+        "run": 1
+      },
+      {
+        "method": "baseline_hyperplane",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.19,
+        "build_time": 0.0002827644348144531,
+        "search_time": 0.0,
+        "run": 2
+      }
+    ]
+  },
+  {
+    "method": "baseline_p_stable",
+    "n_bits": 8,
+    "n_codes": 32,
+    "k": 5,
+    "hamming_radius": 1,
+    "n_runs": 3,
+    "recall_mean": 0.04666666666666667,
+    "recall_std": 0.02357022603955158,
+    "recall_min": 0.030000000000000006,
+    "recall_max": 0.08,
+    "build_time_mean": 0.00027306874593098957,
+    "build_time_std": 2.769033335079248e-05,
+    "search_time_mean": 0.0,
+    "search_time_std": 0.0,
+    "runs": [
+      {
+        "method": "baseline_p_stable",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.030000000000000006,
+        "build_time": 0.0002961158752441406,
+        "search_time": 0.0,
+        "run": 0
+      },
+      {
+        "method": "baseline_p_stable",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.08,
+        "build_time": 0.00023412704467773438,
+        "search_time": 0.0,
+        "run": 1
+      },
+      {
+        "method": "baseline_p_stable",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.030000000000000006,
+        "build_time": 0.00028896331787109375,
+        "search_time": 0.0,
+        "run": 2
+      }
+    ]
+  },
+  {
+    "method": "baseline_random_proj",
+    "n_bits": 8,
+    "n_codes": 32,
+    "k": 5,
+    "hamming_radius": 1,
+    "n_runs": 3,
+    "recall_mean": 0.14,
+    "recall_std": 0.03559026084010437,
+    "recall_min": 0.11000000000000001,
+    "recall_max": 0.19,
+    "build_time_mean": 0.0003181298573811849,
+    "build_time_std": 1.9271472053136044e-05,
+    "search_time_mean": 0.0,
+    "search_time_std": 0.0,
+    "runs": [
+      {
+        "method": "baseline_random_proj",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.12000000000000002,
+        "build_time": 0.0003452301025390625,
+        "search_time": 0.0,
+        "run": 0
+      },
+      {
+        "method": "baseline_random_proj",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.11000000000000001,
+        "build_time": 0.0003070831298828125,
+        "search_time": 0.0,
+        "run": 1
+      },
+      {
+        "method": "baseline_random_proj",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.19,
+        "build_time": 0.0003020763397216797,
+        "search_time": 0.0,
+        "run": 2
+      }
+    ]
+  },
+  {
+    "method": "hyperplane",
+    "n_bits": 8,
+    "n_codes": 32,
+    "k": 5,
+    "hamming_radius": 1,
+    "n_runs": 3,
+    "recall_mean": 0.03333333333333333,
+    "recall_std": 0.004714045207910314,
+    "recall_min": 0.030000000000000006,
+    "recall_max": 0.04,
+    "build_time_mean": 118.38687833150227,
+    "build_time_std": 3.9116374450289166,
+    "search_time_mean": 0.013303359349568685,
+    "search_time_std": 8.432343808415078e-05,
+    "runs": [
+      {
+        "method": "hyperplane",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.04,
+        "build_time": 123.48367500305176,
+        "search_time": 0.013401985168457031,
+        "run": 0
+      },
+      {
+        "method": "hyperplane",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.030000000000000006,
+        "build_time": 117.7008330821991,
+        "search_time": 0.013195991516113281,
+        "run": 1
+      },
+      {
+        "method": "hyperplane",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.030000000000000006,
+        "build_time": 113.97612690925598,
+        "search_time": 0.013312101364135742,
+        "run": 2
+      }
+    ]
+  },
+  {
+    "method": "p_stable",
+    "n_bits": 8,
+    "n_codes": 32,
+    "k": 5,
+    "hamming_radius": 1,
+    "n_runs": 3,
+    "recall_mean": 0.04000000000000001,
+    "recall_std": 0.00816496580927726,
+    "recall_min": 0.030000000000000006,
+    "recall_max": 0.05,
+    "build_time_mean": 150.81322765350342,
+    "build_time_std": 3.9512365034292216,
+    "search_time_mean": 0.013445297876993815,
+    "search_time_std": 0.00016645331971526145,
+    "runs": [
+      {
+        "method": "p_stable",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.05,
+        "build_time": 156.27841114997864,
+        "search_time": 0.013431072235107422,
+        "run": 0
+      },
+      {
+        "method": "p_stable",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.030000000000000006,
+        "build_time": 147.0720567703247,
+        "search_time": 0.013248920440673828,
+        "run": 1
+      },
+      {
+        "method": "p_stable",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.04,
+        "build_time": 149.0892150402069,
+        "search_time": 0.013655900955200195,
+        "run": 2
+      }
+    ]
+  },
+  {
+    "method": "random_proj",
+    "n_bits": 8,
+    "n_codes": 32,
+    "k": 5,
+    "hamming_radius": 1,
+    "n_runs": 3,
+    "recall_mean": 0.05333333333333334,
+    "recall_std": 0.018856180831641266,
+    "recall_min": 0.04,
+    "recall_max": 0.08,
+    "build_time_mean": 118.25492159525554,
+    "build_time_std": 3.8492546723012175,
+    "search_time_mean": 0.013069073359171549,
+    "search_time_std": 0.00013609397146301504,
+    "runs": [
+      {
+        "method": "random_proj",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.08,
+        "build_time": 123.21346187591553,
+        "search_time": 0.013216018676757812,
+        "run": 0
+      },
+      {
+        "method": "random_proj",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.04,
+        "build_time": 117.72110795974731,
+        "search_time": 0.013103246688842773,
+        "run": 1
+      },
+      {
+        "method": "random_proj",
+        "n_bits": 8,
+        "n_codes": 32,
+        "k": 5,
+        "hamming_radius": 1,
+        "recall": 0.04,
+        "build_time": 113.83019495010376,
+        "search_time": 0.012887954711914062,
+        "run": 2
+      }
+    ]
+  }
+]

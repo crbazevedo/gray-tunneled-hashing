@@ -8,7 +8,8 @@ We need to optimize J(φ) directly.
 """
 
 import numpy as np
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable
+import time
 
 from gray_tunneled_hashing.data.synthetic_generators import generate_hypercube_vertices
 from gray_tunneled_hashing.evaluation.metrics import hamming_distance
@@ -274,6 +275,8 @@ def hill_climb_j_phi(
     bucket_to_embedding_idx: Optional[np.ndarray] = None,
     semantic_distances: Optional[np.ndarray] = None,
     semantic_weight: float = 0.0,
+    verbose: bool = False,
+    progress_callback: Optional[Callable[[int, float, float], None]] = None,
 ) -> Tuple[np.ndarray, float, float, list]:
     """
     Hill climb to minimize J(φ) directly using 2-swap moves.
@@ -311,7 +314,21 @@ def hill_climb_j_phi(
     cost = initial_cost
     cost_history = [initial_cost]
     
+    # FIX 3: Get K to validate swaps maintain embedding_idx < K constraint
+    K = len(pi)
+    if bucket_to_embedding_idx is None:
+        # Default: bucket i maps to embedding i, so embedding_idx must be < K
+        max_valid_embedding_idx = K - 1
+    else:
+        # If bucket_to_embedding_idx is provided, find max valid embedding_idx
+        max_valid_embedding_idx = bucket_to_embedding_idx.max() if len(bucket_to_embedding_idx) > 0 else K - 1
+    
+    last_print_time = time.time()
+    print_interval = 10.0  # Print every 10 seconds
+    
     for iteration in range(max_iter):
+        iter_start_time = time.time()
+        
         # Sample random 2-swaps
         candidates = []
         for _ in range(sample_size):
@@ -323,6 +340,18 @@ def hill_climb_j_phi(
         best_swap = None
         
         for u, v in candidates:
+            # FIX 3: Check if swap maintains validity constraint (embedding_idx < K)
+            # After swap: perm[u] gets perm[v], perm[v] gets perm[u]
+            # Both resulting values must be <= max_valid_embedding_idx
+            # Since we initialize with all values < K, swaps should maintain this
+            # But we verify to be safe
+            new_u_val = perm[v]
+            new_v_val = perm[u]
+            
+            # Skip swap if it would create invalid values
+            if new_u_val > max_valid_embedding_idx or new_v_val > max_valid_embedding_idx:
+                continue
+            
             # Compute delta efficiently
             delta = compute_j_phi_cost_delta_swap(
                 perm, pi, w, bucket_to_code, n_bits, u, v, bucket_to_embedding_idx,
@@ -335,19 +364,45 @@ def hill_climb_j_phi(
         # Apply best improving swap
         if best_swap is not None:
             u, v = best_swap
-            perm[u], perm[v] = perm[v], perm[u]
-            cost += best_delta
-            
-            # Validate monotonicity
-            if cost > initial_cost + 1e-10:
-                raise ValueError(
-                    f"Monotonicity violated: cost {cost:.6f} > initial_cost {initial_cost:.6f}"
-                )
-            
-            cost_history.append(cost)
+            # FIX 3: Validate swap maintains constraint before applying
+            # After swap, both values should be <= max_valid_embedding_idx
+            # Since we check this in the candidate evaluation, this should always pass
+            # But we verify to be safe
+            temp_u, temp_v = perm[v], perm[u]
+            if temp_u <= max_valid_embedding_idx and temp_v <= max_valid_embedding_idx:
+                perm[u], perm[v] = temp_u, temp_v
+                cost += best_delta
+                
+                # Validate monotonicity
+                if cost > initial_cost + 1e-10:
+                    raise ValueError(
+                        f"Monotonicity violated: cost {cost:.6f} > initial_cost {initial_cost:.6f}"
+                    )
+                
+                cost_history.append(cost)
+            else:
+                # This shouldn't happen since we check in candidate evaluation
+                # But if it does, skip the swap
+                continue
         else:
             # No improvement found
+            if verbose:
+                print(f"  No improvement found at iteration {iteration}, stopping.")
             break
+        
+        # Print progress periodically
+        current_time = time.time()
+        if verbose or (current_time - last_print_time >= print_interval):
+            elapsed = current_time - last_print_time
+            improvement = ((initial_cost - cost) / initial_cost * 100) if initial_cost > 0 else 0
+            delta_str = f"{best_delta:.4f}" if best_swap is not None else "0.0000"
+            print(f"  [Iter {iteration:3d}] cost={cost:.4f} ({improvement:.1f}% improvement), "
+                  f"delta={delta_str}, time={elapsed:.1f}s")
+            last_print_time = current_time
+        
+        # Call progress callback if provided
+        if progress_callback is not None:
+            progress_callback(iteration, cost, best_delta if best_swap is not None else 0.0)
     
     return perm, cost, initial_cost, cost_history
 

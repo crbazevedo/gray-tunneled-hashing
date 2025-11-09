@@ -1,0 +1,34 @@
+{
+  "configuration": {
+    "n_samples": 500,
+    "n_queries": 50,
+    "dim": 128,
+    "n_bits": 6,
+    "k": 10,
+    "hamming_radius": 1
+  },
+  "coverage_analysis": {
+    "coverage_rate": 0.106,
+    "stats": {
+      "total_queries": 50,
+      "total_gt_neighbors": 500,
+      "neighbors_in_ball": 53,
+      "neighbors_not_in_ball": 447,
+      "distance_distribution": {
+        "2": 138,
+        "1": 122,
+        "3": 118,
+        "4": 41,
+        "5": 8,
+        "0": 19,
+        "6": 1
+      },
+      "queries_with_full_coverage": 0,
+      "queries_with_no_coverage": 15
+    }
+  },
+  "recommendations": {
+    "increase_radius": true,
+    "recommended_radius": 2
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "configuration": {
+    "n_samples": 500,
+    "n_queries": 50,
+    "dim": 128,
+    "n_bits": 6,
+    "k": 10,
+    "hamming_radius": 1
+  },
+  "analysis": {
+    "total_j_phi": 2.1940008060000458,
+    "recall_weighted_cost": 0.25999983375,
+    "recall_weighted_fraction": 0.1185048943641977,
+    "term_stats": [
+      {
+        "hamming_distance": 

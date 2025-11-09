@@ -133,6 +133,8 @@ def query_with_hamming_ball(
     n_bits: int,
     hamming_radius: int = 1,
     max_candidates: Optional[int] = None,
+    enable_logging: bool = False,
+    bucket_to_embedding_idx: Optional[np.ndarray] = None,
 ) -> QueryResult:
     """
     Query with Hamming ball expansion after GTH permutation.
@@ -140,18 +142,22 @@ def query_with_hamming_ball(
     Pipeline:
     1. Convert query_code to vertex index
     2. Expand Hamming ball around query_code in vertex space
-    3. For each vertex in ball, apply permutation to get bucket_idx
-    4. Return unique bucket indices
+    3. For each vertex in ball, apply permutation to get embedding_idx
+    4. Map embedding_idx to bucket_idx using bucket_to_embedding_idx
+    5. Return unique bucket indices
     
     Args:
         query_code: Query code of shape (n_bits,) with dtype bool (before GTH)
         permutation: GTH permutation array of shape (N,) where N = 2**n_bits
-                    permutation[vertex_idx] = bucket_idx
+                    permutation[vertex_idx] = embedding_idx (0..N-1)
         code_to_bucket: Dictionary mapping code tuples to bucket indices
         bucket_to_code: Array of bucket codes of shape (K, n_bits)
         n_bits: Number of bits
         hamming_radius: Hamming radius for expansion (default: 1)
         max_candidates: Optional maximum number of candidates to return
+        enable_logging: If True, print detailed logging
+        bucket_to_embedding_idx: Optional mapping from bucket_idx to embedding_idx
+                                If None, assumes bucket_idx == embedding_idx for first K buckets
         
     Returns:
         QueryResult with candidate codes and indices
@@ -181,6 +187,17 @@ def query_with_hamming_ball(
     vertices = generate_hypercube_vertices(n_bits)
     candidate_buckets = set()
     valid_codes = []
+    invalid_buckets = []
+    buckets_not_in_code_to_bucket = []
+    
+    # Get valid bucket range from code_to_bucket
+    K = len(bucket_to_code)
+    valid_bucket_set = set(code_to_bucket.values())
+    
+    # Set up bucket_to_embedding_idx mapping
+    if bucket_to_embedding_idx is None:
+        # Default: bucket i maps to embedding i (for first K buckets)
+        bucket_to_embedding_idx = np.arange(K, dtype=np.int32)
     
     for vertex_code in candidate_vertex_codes:
         # Convert vertex code to vertex index
@@ -190,9 +207,41 @@ def query_with_hamming_ball(
                 vertex_idx += 2 ** i
         
         if vertex_idx < len(permutation):
-            bucket_idx = permutation[vertex_idx]
-            candidate_buckets.add(bucket_idx)
-            valid_codes.append(vertex_code)
+            # CRITICAL FIX: permutation[vertex_idx] = embedding_idx, not bucket_idx directly
+            embedding_idx = permutation[vertex_idx]
+            
+            # Map embedding_idx to bucket_idx
+            # Find which bucket this embedding corresponds to
+            bucket_indices = np.where(bucket_to_embedding_idx == embedding_idx)[0]
+            
+            if len(bucket_indices) > 0:
+                bucket_idx = bucket_indices[0]  # Take first match
+                
+                # Validate bucket_idx
+                if bucket_idx >= K:
+                    invalid_buckets.append(bucket_idx)
+                    if enable_logging:
+                        print(f"  ⚠️  Invalid bucket index: {bucket_idx} >= K={K} (from embedding_idx={embedding_idx})")
+                elif bucket_idx not in valid_bucket_set:
+                    buckets_not_in_code_to_bucket.append(bucket_idx)
+                    if enable_logging:
+                        print(f"  ⚠️  Bucket {bucket_idx} not in code_to_bucket (from embedding_idx={embedding_idx})")
+                else:
+                    # Valid bucket
+                    candidate_buckets.add(bucket_idx)
+                    valid_codes.append(vertex_code)
+            else:
+                # embedding_idx doesn't correspond to any bucket (embedding_idx >= K or not mapped)
+                invalid_buckets.append(embedding_idx)  # Store embedding_idx for logging
+                if enable_logging:
+                    print(f"  ⚠️  Embedding index {embedding_idx} doesn't map to any bucket (K={K})")
+    
+    if enable_logging:
+        print(f"  Query vertex: {query_code_int}")
+        print(f"  Hamming ball size: {len(candidate_vertex_codes)}")
+        print(f"  Valid buckets: {len(candidate_buckets)}")
+        print(f"  Invalid buckets (>=K): {len(invalid_buckets)}")
+        print(f"  Buckets not in code_to_bucket: {len(buckets_not_in_code_to_bucket)}")
     
     # Step 4: Convert bucket indices to codes for permuted_code representation
     # Use the first valid code as permuted_code (the query code itself after expansion)
@@ -220,6 +269,7 @@ def get_candidate_set(
     n_bits: int,
     hamming_radius: int = 1,
     max_candidates: Optional[int] = None,
+    bucket_to_embedding_idx: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Get candidate set from Hamming ball expansion.
@@ -246,6 +296,7 @@ def get_candidate_set(
         n_bits=n_bits,
         hamming_radius=hamming_radius,
         max_candidates=max_candidates,
+        bucket_to_embedding_idx=bucket_to_embedding_idx,
     )
     
     return result.candidate_indices, result.candidate_codes
@@ -259,6 +310,7 @@ def batch_query_with_hamming_ball(
     n_bits: int,
     hamming_radius: int = 1,
     max_candidates: Optional[int] = None,
+    bucket_to_embedding_idx: Optional[np.ndarray] = None,
 ) -> list[QueryResult]:
     """
     Process multiple queries with Hamming ball expansion.
@@ -285,6 +337,7 @@ def batch_query_with_hamming_ball(
             n_bits=n_bits,
             hamming_radius=hamming_radius,
             max_candidates=max_candidates,
+            bucket_to_embedding_idx=bucket_to_embedding_idx,
         )
         results.append(result)
     

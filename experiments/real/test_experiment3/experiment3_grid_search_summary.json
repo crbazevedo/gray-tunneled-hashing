@@ -1,0 +1,22 @@
+{
+  "total_configs": 2,
+  "successful": 2,
+  "failed": 0,
+  "total_time_seconds": 324.6962592601776,
+  "configs": [
+    {
+      "n_bits": 6,
+      "n_codes": 16,
+      "hamming_radius": 0,
+      "block_size": 4,
+      "num_tunneling_steps": 0
+    },
+    {
+      "n_bits": 6,
+      "n_codes": 16,
+      "hamming_radius": 0,
+      "block_size": 4,
+      "num_tunneling_steps": 5
+    }
+  ]
+}

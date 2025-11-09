@@ -385,6 +385,11 @@ class GrayTunneledHasher:
         w: np.ndarray,
         use_semantic_distances: bool = True,
         optimize_j_phi_directly: bool = True,
+        optimization_method: Literal["hill_climb", "simulated_annealing", "memetic"] = "hill_climb",
+        use_cosine_objective: bool = False,
+        cosine_weight: float = 1.0,
+        hamming_weight: float = 1.0,
+        distance_metric: str = "cosine",
     ) -> "GrayTunneledHasher":
         """
         Fit with distribution-aware traffic weights.
@@ -464,29 +469,167 @@ class GrayTunneledHasher:
                 semantic_weight = 0.5
             
             # Initialize permutation (identity or random)
+            # FIX 1: Constrain permutation to valid bucket indices (0..K-1)
+            # When K < N, we must ensure all embedding_idx < K to correspond to valid buckets
+            K_actual = len(pi)  # Number of actual buckets
+            
             if self.init_strategy == "random":
-                pi_init = np.random.permutation(self.N).astype(np.int32)
+                # Random initialization: ensure all values are in [0, K_actual-1)
+                # Strategy: create permutation of K values, then distribute across N vertices
+                # This ensures all vertices map to valid buckets while maintaining randomness
+                if K_actual >= self.N:
+                    # K >= N: use full permutation (all values valid)
+                    pi_init = np.random.permutation(self.N).astype(np.int32)
+                else:
+                    # K < N: create permutation of K values, repeat to fill N positions
+                    # Use modulo to ensure all values < K
+                    base_perm = np.random.permutation(K_actual).astype(np.int32)
+                    # Distribute base_perm across N vertices using modulo
+                    # This ensures all values are in [0, K_actual-1)
+                    pi_init = np.array([base_perm[i % K_actual] for i in range(self.N)], dtype=np.int32)
+                    # Shuffle to break any pattern while maintaining validity
+                    np.random.shuffle(pi_init)
             else:
-                pi_init = np.arange(self.N, dtype=np.int32)
+                # Identity: map vertex i to embedding (i % K_actual)
+                # This ensures all embedding_idx < K_actual, mapping to valid buckets
+                pi_init = (np.arange(self.N, dtype=np.int32) % K_actual).astype(np.int32)
             
             # Store initial permutation before optimization
             self.pi_init_ = pi_init.copy()
             
-            # Optimize J(φ) directly using original K (no padding)
-            # The permutation space is still N, but we only optimize over first K buckets
-            pi_optimized, cost, initial_cost, cost_history = hill_climb_j_phi(
-                pi_init=pi_init,
-                pi=pi,  # Original K
-                w=w,    # Original K x K
-                bucket_to_code=bucket_to_code_original,  # Original K
-                n_bits=self.n_bits,
-                max_iter=self.max_two_swap_iters,
-                sample_size=self.two_swap_sample_size,
-                random_state=self.random_state,
-                bucket_to_embedding_idx=None,  # bucket i maps to embedding i
-                semantic_distances=semantic_distances,
-                semantic_weight=semantic_weight,
-            )
+            # Choose optimization method
+            if use_cosine_objective:
+                # Use cosine-based objective
+                from gray_tunneled_hashing.distribution.cosine_objective import (
+                    compute_j_phi_cosine_cost,
+                )
+                from gray_tunneled_hashing.algorithms.simulated_annealing import (
+                    simulated_annealing_j_phi,
+                    memetic_algorithm_j_phi,
+                )
+                
+                if optimization_method == "simulated_annealing":
+                    pi_optimized, cost, initial_cost, cost_history = simulated_annealing_j_phi(
+                        pi_init=pi_init,
+                        pi=pi,
+                        w=w,
+                        bucket_to_code=bucket_to_code_original,
+                        n_bits=self.n_bits,
+                        initial_temperature=1000.0,
+                        cooling_rate=0.95,
+                        min_temperature=0.01,
+                        max_iter=self.max_two_swap_iters,
+                        sample_size=self.two_swap_sample_size,
+                        use_block_tunneling=(self.mode == "full"),
+                        block_size=self.block_size,
+                        num_tunneling_steps=self.num_tunneling_steps,
+                        random_state=self.random_state,
+                        bucket_to_embedding_idx=None,
+                        semantic_distances=None,  # Not used with cosine objective
+                        semantic_weight=0.0,
+                        bucket_embeddings=bucket_embeddings,
+                        use_cosine_objective=True,
+                        cosine_weight=cosine_weight,
+                        hamming_weight=hamming_weight,
+                        distance_metric=distance_metric,
+                        enable_logging=self.track_history,
+                    )
+                elif optimization_method == "memetic":
+                    pi_optimized, cost, initial_cost, cost_history = memetic_algorithm_j_phi(
+                        pi_init=pi_init,
+                        pi=pi,
+                        w=w,
+                        bucket_to_code=bucket_to_code_original,
+                        n_bits=self.n_bits,
+                        population_size=10,
+                        num_generations=max(1, self.max_two_swap_iters // 20),
+                        sa_iterations=20,
+                        local_search_iterations=10,
+                        random_state=self.random_state,
+                        bucket_to_embedding_idx=None,
+                        semantic_distances=None,
+                        semantic_weight=0.0,
+                        bucket_embeddings=bucket_embeddings,
+                        enable_logging=self.track_history,
+                    )
+                else:
+                    # Fallback to hill climbing with cosine objective
+                    # TODO: Implement hill_climb with cosine objective
+                    pi_optimized, cost, initial_cost, cost_history = hill_climb_j_phi(
+                        pi_init=pi_init,
+                        pi=pi,
+                        w=w,
+                        bucket_to_code=bucket_to_code_original,
+                        n_bits=self.n_bits,
+                        max_iter=self.max_two_swap_iters,
+                        sample_size=self.two_swap_sample_size,
+                        random_state=self.random_state,
+                        bucket_to_embedding_idx=None,
+                        semantic_distances=semantic_distances,
+                        semantic_weight=semantic_weight,
+                    )
+            else:
+                # Use standard J(φ) objective
+                if optimization_method == "simulated_annealing":
+                    from gray_tunneled_hashing.algorithms.simulated_annealing import (
+                        simulated_annealing_j_phi,
+                    )
+                    pi_optimized, cost, initial_cost, cost_history = simulated_annealing_j_phi(
+                        pi_init=pi_init,
+                        pi=pi,
+                        w=w,
+                        bucket_to_code=bucket_to_code_original,
+                        n_bits=self.n_bits,
+                        initial_temperature=1000.0,
+                        cooling_rate=0.95,
+                        min_temperature=0.01,
+                        max_iter=self.max_two_swap_iters,
+                        sample_size=self.two_swap_sample_size,
+                        use_block_tunneling=(self.mode == "full"),
+                        block_size=self.block_size,
+                        num_tunneling_steps=self.num_tunneling_steps,
+                        random_state=self.random_state,
+                        bucket_to_embedding_idx=None,
+                        semantic_distances=semantic_distances,
+                        semantic_weight=semantic_weight,
+                        enable_logging=self.track_history,
+                    )
+                elif optimization_method == "memetic":
+                    from gray_tunneled_hashing.algorithms.simulated_annealing import (
+                        memetic_algorithm_j_phi,
+                    )
+                    pi_optimized, cost, initial_cost, cost_history = memetic_algorithm_j_phi(
+                        pi_init=pi_init,
+                        pi=pi,
+                        w=w,
+                        bucket_to_code=bucket_to_code_original,
+                        n_bits=self.n_bits,
+                        population_size=10,
+                        num_generations=max(1, self.max_two_swap_iters // 20),
+                        sa_iterations=20,
+                        local_search_iterations=10,
+                        random_state=self.random_state,
+                        bucket_to_embedding_idx=None,
+                        semantic_distances=semantic_distances,
+                        semantic_weight=semantic_weight,
+                        bucket_embeddings=None,  # Not used with standard J(φ)
+                        enable_logging=self.track_history,
+                    )
+                else:
+                    # Default: hill climbing
+                    pi_optimized, cost, initial_cost, cost_history = hill_climb_j_phi(
+                        pi_init=pi_init,
+                        pi=pi,  # Original K
+                        w=w,    # Original K x K
+                        bucket_to_code=bucket_to_code_original,  # Original K
+                        n_bits=self.n_bits,
+                        max_iter=self.max_two_swap_iters,
+                        sample_size=self.two_swap_sample_size,
+                        random_state=self.random_state,
+                        bucket_to_embedding_idx=None,  # bucket i maps to embedding i
+                        semantic_distances=semantic_distances,
+                        semantic_weight=semantic_weight,
+                    )
             
             # Store results
             self.pi_ = pi_optimized
