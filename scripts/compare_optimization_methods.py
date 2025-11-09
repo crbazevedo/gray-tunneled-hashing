@@ -126,9 +126,11 @@ def evaluate_method(
         n_bits=index_obj.n_bits,
     )
     
-    # Compute recall@k
-    query_codes = index_obj.lsh.hash(queries)
-    base_codes_lsh = index_obj.lsh.hash(base_embeddings)
+    # Compute recall@k - need to recreate LSH object
+    from gray_tunneled_hashing.binary.lsh_families import create_lsh_family
+    lsh = create_lsh_family("hyperplane", n_bits=index_obj.n_bits, dim=base_embeddings.shape[1], random_state=kwargs.get('random_state', 42))
+    query_codes = lsh.hash(queries)
+    base_codes_lsh = lsh.hash(base_embeddings)
     
     # Build bucket to dataset mapping
     bucket_to_dataset_indices = {}

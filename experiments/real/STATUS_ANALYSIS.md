@@ -306,3 +306,53 @@
 - Problema parece ser fundamental: Hamming distance não reflete cosine distance suficientemente bem
 - Otimização de J(φ) melhora a função objetivo, mas não melhora recall (proxy inadequado)
 
+## 🔬 Resultados dos Diagnósticos (Sprint 7)
+
+### Hamming Ball Coverage (Múltiplos Radius)
+
+| Radius | Coverage | Status |
+|--------|----------|--------|
+| 1 | 10.6% | ⚠️ Muito baixo |
+| 2 | 29.8% | ⚠️ Melhor, mas ainda baixo |
+| 3 | 63.2% | ✅ Maioria coberta |
+
+**Conclusão**: Mesmo com radius=3 (63.2% coverage), recall não melhora proporcionalmente. Isso sugere problema fundamental na estrutura da busca.
+
+### Comparação de Métodos de Otimização
+
+| Método | Recall | J(φ) Cost | Status |
+|--------|--------|-----------|--------|
+| Hill Climb (J(φ)) | 0.026 | 2.272 | ⚠️ |
+| Simulated Annealing (J(φ)) | 0.014 | 2.162 | ❌ Pior |
+| Memetic Algorithm (J(φ)) | 0.016 | 2.128 | ❌ Pior |
+| Hill Climb (Cosine) | 0.018 | 2.224 | ⚠️ |
+| **Simulated Annealing (Cosine)** | **0.028** | **2.156** | ✅ Melhor, mas ainda muito baixo |
+
+**Conclusão**: Nenhum método consegue melhorar recall significativamente. O problema não é o algoritmo de otimização.
+
+### Evolução de Distâncias Hamming
+
+- **Antes GTH**: 2.62 ± 1.24
+- **Depois GTH**: 2.62 ± 1.24
+- **Mudança**: 0.00 (nenhuma!)
+
+**Conclusão**: GTH não está alterando distâncias Hamming entre queries e neighbors. Isso confirma que J(φ) não está otimizando a métrica correta.
+
+## 🚨 Análise Crítica Completa
+
+Ver **CRITICAL_ANALYSIS.md** para análise detalhada dos problemas fundamentais:
+
+1. **J(φ) não é proxy adequado para recall** - Otimiza distâncias entre códigos de buckets, não entre embeddings reais
+2. **Correlação cosine-Hamming muito fraca (0.17)** - Otimizar Hamming não melhora recall baseado em cosine
+3. **Integração LSH → GTH está incorreta** - Permutação sobre vértices vs buckets cria complexidade
+4. **Hamming ball expansion não considera permutação corretamente** - Deveria expandir após aplicar permutação
+
+## 📋 Sugestões de Revisão Fundamental
+
+1. **GTH Sem LSH**: Eliminar LSH, aplicar GTH diretamente sobre embeddings
+2. **GTH + HNSW**: Eliminar LSH, usar HNSW para busca em espaço binário
+3. **Corrigir Integração LSH → GTH**: Permutação sobre buckets, objetivo sobre embeddings reais
+4. **Multi-Probe LSH**: Eliminar GTH, usar multi-probe LSH
+
+Ver **CRITICAL_ANALYSIS.md** e **SPRINT7_DIAGNOSTIC_REPORT.md** para detalhes completos.
+

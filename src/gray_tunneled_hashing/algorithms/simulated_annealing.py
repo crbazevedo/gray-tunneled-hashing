@@ -244,9 +244,10 @@ def simulated_annealing_j_phi(
             elapsed = current_time - last_print_time
             improvement = ((initial_cost - best_cost) / initial_cost * 100) if initial_cost > 0 else 0
             acceptance_rate = n_acceptances / (n_acceptances + n_rejections + 1e-10)
+            delta_str = f"{best_delta:.4f}" if best_swap is not None else "0.0000"
             print(f"  [SA Iter {iteration:3d}] cost={best_cost:.4f} ({improvement:.1f}% improvement), "
                   f"T={temperature:.2f}, accept_rate={acceptance_rate:.2f}, "
-                  f"delta={best_delta:.4f if best_swap else 0:.4f}, time={elapsed:.1f}s")
+                  f"delta={delta_str}, time={elapsed:.1f}s")
             last_print_time = current_time
         
         # Early stopping if temperature too low and no recent improvements

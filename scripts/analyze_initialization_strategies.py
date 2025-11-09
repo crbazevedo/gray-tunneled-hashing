@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import numpy as np
 import argparse
 import json
+import time
 from typing import Dict, List
 from sklearn.metrics.pairwise import cosine_similarity
 

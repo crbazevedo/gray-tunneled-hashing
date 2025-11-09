@@ -8,7 +8,58 @@
     "hamming_radius": 1,
     "max_iter": 20
   },
-  "results": [],
-  "best_recall": 0.0,
-  "best_method": null
+  "results": [
+    {
+      "method_name": "Hill Climb (J(\u03c6))",
+      "optimization_method": "hill_climb",
+      "use_cosine_objective": false,
+      "j_phi_cost": 2.272000728000047,
+      "recall": 0.026000000000000006,
+      "optimization_time": 229.3485758304596,
+      "n_queries": 50,
+      "avg_candidates_per_query": 7.0
+    },
+    {
+      "method_name": "Simulated Annealing (J(\u03c6))",
+      "optimization_method": "simulated_annealing",
+      "use_cosine_objective": false,
+      "j_phi_cost": 2.1620008380000444,
+      "recall": 0.014000000000000002,
+      "optimization_time": 712.6806089878082,
+      "n_queries": 50,
+      "avg_candidates_per_query": 7.0
+    },
+    {
+      "method_name": "Memetic Algorithm (J(\u03c6))",
+      "optimization_method": "memetic",
+      "use_cosine_objective": false,
+      "j_phi_cost": 2.1280008720000514,
+      "recall": 0.016,
+      "optimization_time": 4655.785032987595,
+      "n_queries": 50,
+      "avg_candidates_per_query": 7.0
+    },
+    {
+      "method_name": "Hill Climb (Cosine)",
+      "optimization_method": "hill_climb",
+      "use_cosine_objective": true,
+      "j_phi_cost": 2.224000776000044,
+      "recall": 0.018000000000000002,
+      "optimization_time": 355.79491782188416,
+      "n_queries": 50,
+      "avg_candidates_per_query": 7.0
+    },
+    {
+      "method_name": "Simulated Annealing (Cosine)",
+      "optimization_method": "simulated_annealing",
+      "use_cosine_objective": true,
+      "j_phi_cost": 2.156000844000049,
+      "recall": 0.028000000000000004,
+      "optimization_time": 1133.429454088211,
+      "n_queries": 50,
+      "avg_candidates_per_query": 7.0
+    }
+  ],
+  "best_recall": 0.028000000000000004,
+  "best_method": "Simulated Annealing (Cosine)"
 }

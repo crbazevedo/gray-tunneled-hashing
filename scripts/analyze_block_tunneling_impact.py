@@ -186,6 +186,7 @@ def main():
             base_embeddings=base_embeddings,
             queries=queries,
             ground_truth=ground_truth,
+            k=args.k,
             hamming_radius=args.hamming_radius,
             num_tunneling_steps=num_tunneling_steps,
             block_size=block_size,

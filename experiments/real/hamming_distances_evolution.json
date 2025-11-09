@@ -1,0 +1,47 @@
+{
+  "n_pairs": 500,
+  "hamming_before": {
+    "mean": 2.618,
+    "std": 1.2442170228702065,
+    "min": 0,
+    "max": 6,
+    "distribution": {
+      "0": 19,
+      "1": 77,
+      "2": 135,
+      "3": 150,
+      "4": 86,
+      "5": 30,
+      "6": 3
+    }
+  },
+  "hamming_after": {
+    "mean": 2.618,
+    "std": 1.2442170228702065,
+    "min": 0,
+    "max": 6,
+    "distribution": {
+      "0": 19,
+      "1": 77,
+      "2": 135,
+      "3": 150,
+      "4": 86,
+      "5": 30,
+      "6": 3
+    }
+  },
+  "cosine_distances": {
+    "mean": 0.8215166120268405,
+    "std": 0.05619531634347842
+  },
+  "comparison": {
+    "mean_increase": 0.0,
+    "pairs_with_increase": 0,
+    "pairs_with_decrease": 0,
+    "pairs_unchanged": 500
+  },
+  "correlation": {
+    "cosine_hamming_before": 0.08981466779363066,
+    "cosine_hamming_after": 0.08981466779363066
+  }
+}
