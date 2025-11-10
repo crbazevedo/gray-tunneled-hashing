@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Análise de resultados do benchmark Sprint 8.
+Analysis of Sprint 8 benchmark results.
 
-Gera relatório comparativo e tabelas de resultados.
+Generates comparative reports and result tables.
 """
 
 import argparse
