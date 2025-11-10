@@ -1,12 +1,12 @@
 """
-Diagnóstico sistemático do cálculo de J(φ₀).
+Systematic diagnostic of the calculation of J(φ₀).
 
-Testa hipóteses H1-H5 sobre por que J(φ*) > J(φ₀):
-- H1: J(φ₀) deveria ser calculado a partir da permutação inicial
-- H2: Permutação inicial não corresponde ao layout original
-- H3: Mapeamento bucket → vértice na permutação inicial está incorreto
-- H4: compute_j_phi_cost com identity não produz mesmo resultado que cálculo direto
-- H5: Padding/subsampling altera correspondência bucket → código
+Tests hypotheses H1-H5 about why J(φ*) > J(φ₀):
+- H1: J(φ₀) should be calculated from the initial permutation
+- H2: The initial permutation does not correspond to the original layout
+- H3: The mapping bucket → vertex in the initial permutation is incorrect
+- H4: compute_j_phi_cost with identity does not produce the same result as direct calculation
+- H5: Padding/subsampling alters the correspondence bucket → code
 """
 
 import argparse
