@@ -1,7 +1,7 @@
 """
 Lightweight benchmark for Distribution-Aware GTH validation.
 
-Configuração reduzida para validação rápida:
+Reduced configuration for quick validation:
 - n_bits: 6 (vs 8-10 no benchmark completo)
 - n_codes: 16 (vs 32-64)
 - n_runs: 2 (vs 5-10)
