@@ -1,12 +1,12 @@
 """
-Diagnóstico sistemático do bug J(φ*) > J(φ₀).
+Systematic diagnostic of the bug J(φ*) > J(φ₀).
 
-Testa múltiplas hipóteses sobre as causas raízes:
-1. Cálculo incorreto de J(φ₀)
-2. Cálculo incorreto de J(φ*)
-3. Permutação não está minimizando J(φ)
-4. Mapeamento bucket → código incorreto
-5. Problema na construção da matriz D_weighted
+Tests multiple hypotheses about the root causes:
+1. Incorrect calculation of J(φ₀)
+2. Incorrect calculation of J(φ*)
+3. Permutation is not minimizing J(φ)
+4. Incorrect bucket-to-code mapping
+5. Problem in the construction of the D_weighted matrix
 """
 
 import argparse
