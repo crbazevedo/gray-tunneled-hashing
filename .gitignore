@@ -21,6 +21,7 @@ htmlcov/
 
 # Data
 experiments/real/data/
+experiments/real/results_json/
 *.npy
 *.npz
 

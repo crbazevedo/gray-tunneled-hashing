@@ -1,0 +1,34 @@
+================================================================================
+SPRINT 8 BENCHMARK - RESUMO EXECUTIVO
+================================================================================
+
+✅ RESULTADO PRINCIPAL: GTH Sprint 8 supera baselines em 7 de 8 configurações!
+
+MELHORIAS DE RECALL:
+- Hyperplane LSH: +61% a +91% de melhoria
+- p-stable LSH: +11% a +36% de melhoria (1 caso -5%)
+
+MELHOR CONFIGURAÇÃO:
+- Recall: 8.2% (vs 4.3% baseline) = +90.7% melhoria
+- Config: hyperplane_nbits8_ncodes16_k10_radius1_iters10
+- Build time: 80.1s
+- Search time: 0.53 ms/query
+
+PROBLEMAS IDENTIFICADOS:
+⚠️ J(φ) não correlaciona bem com recall para n_bits=8
+⚠️ p-stable LSH tem ganhos menores que Hyperplane
+⚠️ Build time alto (~100s)
+⚠️ Hamming ball coverage baixa (1-8%)
+
+PRÓXIMOS PASSOS:
+1. Investigar correlação J(φ) vs Recall
+2. Otimizar build time
+3. Melhorar Hamming ball coverage
+4. Testar com dados reais maiores
+
+ARQUIVOS GERADOS:
+- results_sprint8_quick.json: Dados brutos do benchmark
+- SPRINT8_BENCHMARK_ANALYSIS.md: Análise automática
+- SPRINT8_BENCHMARK_RESULTS_REPORT.md: Relatório completo
+
+================================================================================
