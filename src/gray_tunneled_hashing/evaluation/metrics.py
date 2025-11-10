@@ -74,3 +74,65 @@ def hamming_distance(codes1: np.ndarray, codes2: np.ndarray) -> np.ndarray:
     
     return distances
 
+
+def recall_at_k(
+    retrieved_indices: np.ndarray,
+    ground_truth_indices: np.ndarray,
+    k: Optional[int] = None,
+) -> float:
+    """
+    Compute recall@k metric.
+    
+    Recall@k is the fraction of ground truth neighbors that appear
+    in the top-k retrieved results.
+    
+    Args:
+        retrieved_indices: Retrieved indices of shape (Q, k_retrieved)
+                          where k_retrieved >= k
+        ground_truth_indices: Ground truth indices of shape (Q, k_gt)
+        k: Number of top results to consider (default: min(k_retrieved, k_gt))
+        
+    Returns:
+        Recall@k score (0.0 to 1.0)
+    """
+    if retrieved_indices.ndim != 2 or ground_truth_indices.ndim != 2:
+        raise ValueError("Both arrays must be 2D")
+    
+    Q_ret = retrieved_indices.shape[0]
+    Q_gt = ground_truth_indices.shape[0]
+    
+    if Q_ret != Q_gt:
+        raise ValueError(
+            f"Number of queries must match: {Q_ret} vs {Q_gt}"
+        )
+    
+    if k is None:
+        k = min(retrieved_indices.shape[1], ground_truth_indices.shape[1])
+    
+    if k > retrieved_indices.shape[1]:
+        raise ValueError(
+            f"k={k} cannot exceed retrieved_indices.shape[1]={retrieved_indices.shape[1]}"
+        )
+    
+    if k > ground_truth_indices.shape[1]:
+        raise ValueError(
+            f"k={k} cannot exceed ground_truth_indices.shape[1]={ground_truth_indices.shape[1]}"
+        )
+    
+    # Slice to k
+    retrieved_k = retrieved_indices[:, :k]
+    ground_truth_k = ground_truth_indices[:, :k]
+    
+    # Compute recall for each query
+    recalls = []
+    for i in range(Q_ret):
+        retrieved_set = set(retrieved_k[i])
+        ground_truth_set = set(ground_truth_k[i])
+        
+        # Intersection size / ground truth size
+        intersection = len(retrieved_set & ground_truth_set)
+        recall = intersection / len(ground_truth_set) if len(ground_truth_set) > 0 else 0.0
+        recalls.append(recall)
+    
+    return np.mean(recalls)
+

@@ -1,0 +1,22 @@
+## Resumo dos Resultados do Diagnóstico
+
+## Executado em: Sun Nov  9 01:51:56 -03 2025
+
+### Resultados Principais
+
+1. **Hamming Ball Coverage**: Apenas 10.6% dos vizinhos ground truth estão dentro do Hamming ball (53/500)
+   - Maioria dos vizinhos está a distância 2 ou mais
+   - Recomendação: Aumentar raio de 1 para 2+
+
+2. **Otimização Direta de Recall**: Piorou o recall (0.018 vs 0.032)
+   - Sugere que o problema não é apenas a função objetivo
+   - Pode ser estrutura do espaço de busca ou inicialização
+
+3. **Hill Climbing**: Melhorou J(φ) em 14.9% (2.618 → 2.228)
+   - Mas não sabemos se isso melhora recall
+
+### Próximos Passos
+- Testar com Hamming radius = 2 ou 3
+- Analisar trajetória de otimização (J(φ) vs recall)
+- Testar diferentes inicializações
+- Comparar métodos de otimização (SA, memético)

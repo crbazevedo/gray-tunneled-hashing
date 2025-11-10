@@ -415,6 +415,135 @@ The key improvement is that Hamming distance in code space better reflects seman
 
 All achieved without changing underlying Hamming-based infrastructure of vector databases.
 
+## Distribution-Aware Hypercube QAP
+
+### Motivation
+
+The canonical QAP objective optimizes for semantic similarity on hypercube edges, but it treats all query patterns equally. In practice, query traffic is often highly skewed: some buckets receive many queries while others are rarely queried. Additionally, true neighbors of queries in high-traffic buckets may cluster in specific regions of the hypercube.
+
+**Distribution-Aware Insight**: We can improve recall@k by optimizing the hypercube layout to minimize expected Hamming distance between query buckets and their true neighbor buckets, weighted by actual query traffic patterns.
+
+### Problem Formulation
+
+**Setup**:
+- Base encoder $h: \mathbb{R}^d \to \{0,1\}^B$ (LSH, PQ, sign, etc.)
+- Non-empty buckets $\mathcal{B} = \{b_1, \dots, b_K\}$ (codes that actually occur)
+- Original bucket codes $c_i = h(b_i) \in \{0,1\}^B$
+- We learn a permutation $\varphi$ of these codes (or equivalently, of bucket indices)
+
+**Traffic Statistics** (collected from query logs or held-out data):
+- **Query prior** $\pi_i$: Fraction of queries in bucket $i$
+  \[
+  \pi_i = \frac{\#\{\text{queries in } b_i\}}{\#\{\text{queries}\}}
+  \]
+- **Neighbor weights** $w_{ij}$: Probability that a true neighbor of a query in bucket $i$ is in bucket $j$
+  \[
+  w_{ij} = \frac{\#\{\text{(query in } b_i, \text{ neighbor in } b_j)\}}{\#\{\text{all query-neighbor pairs}\}}
+  \]
+
+**Distribution-Aware Objective**:
+\[
+J(\varphi) = \sum_{i,j} \pi_i \cdot w_{ij} \cdot d_H(\varphi(c_i), \varphi(c_j))
+\]
+
+where $d_H$ is Hamming distance. This is the **expected Hamming distance** between query bucket and neighbor bucket under the learned layout $\varphi$.
+
+### Integration with Hypercube QAP
+
+The distribution-aware objective can be reformulated as a **weighted hypercube QAP**:
+
+\[
+f(\pi) = \sum_{(u,v) \in E} D_{weighted}[\pi(u), \pi(v)]
+\]
+
+where the weighted distance matrix is:
+
+\[
+D_{weighted}[i, j] = \pi_i \cdot w_{ij} \cdot d_{semantic}(i, j)
+\]
+
+or, for pure traffic-based optimization:
+
+\[
+D_{weighted}[i, j] = \pi_i \cdot w_{ij}
+\]
+
+**Key Advantage**: This formulation preserves the hypercube structure and allows direct reuse of all existing optimization algorithms (2-swap, block moves, tunneling) while incorporating traffic patterns.
+
+### Provable Guarantee
+
+**Theorem**: For any permutation $\varphi$, let $\varphi_0$ be the identity (baseline) permutation. Then:
+
+\[
+J(\varphi^*) \le J(\varphi_0)
+\]
+
+where $\varphi^* = \arg\min_{\varphi} J(\varphi)$.
+
+**Proof**: The set of permutations is finite, and $\varphi_0$ is one of them. Since $\varphi^*$ minimizes $J$, we have $J(\varphi^*) \le J(\varphi_0)$ by definition. Strict inequality holds unless the original layout was already optimal for the traffic.
+
+**Implication**: Distribution-aware GTH is **guaranteed** to have no worse expected query→neighbor Hamming distance than the baseline encoder layout, and typically strictly better.
+
+### Connection to Recall@k
+
+For each query bucket $i$, under layout $\varphi$, define:
+
+\[
+D_{ij}(\varphi) = d_H(\varphi(c_i), \varphi(c_j))
+\]
+
+When searching with radius $R$, we include all buckets $j$ with $D_{ij}(\varphi) \le R$. The probability that a true neighbor bucket lies within radius $R$ is:
+
+\[
+F_i(R; \varphi) = \sum_{j: D_{ij}(\varphi) \le R} w_{ij}
+\]
+
+Expected recall surrogate under the real query distribution:
+
+\[
+\text{Rec}(R; \varphi) = \sum_i \pi_i F_i(R; \varphi)
+\]
+
+**Key Observation**: Lowering $J(\varphi)$ shifts the mass of $w_{ij}$ towards smaller distances. For any fixed $R$, if layout A stochastically dominates layout B (neighbor mass more concentrated at smaller distances), then $\text{Rec}(R; A) \ge \text{Rec}(R; B)$.
+
+Therefore, $J(\varphi)$ is a convex-like surrogate for "neighbors are close in Hamming space", and minimizing $J$ produces layouts with **better recall@k for typical radius budgets** than randomly ordered or naïve LSH layouts.
+
+### Practical Optimization
+
+The distribution-aware GTH pipeline:
+
+1. **Collect traffic stats** (offline, periodic):
+   - From logs or held-out dataset
+   - Compute $h(q)$ and $h(x)$ for k-NN neighbors
+   - Estimate $\pi_i$ and $w_{ij}$
+   - Restrict to top buckets (e.g., covering 99% of $\pi$)
+
+2. **Build weighted distance matrix**:
+   - Option A: $D_{weighted}[i,j] = \pi_i \cdot w_{ij} \cdot \|emb_i - emb_j\|^2$ (traffic + semantic)
+   - Option B: $D_{weighted}[i,j] = \pi_i \cdot w_{ij}$ (pure traffic)
+
+3. **Optimize with standard QAP algorithms**:
+   - Use existing `GrayTunneledHasher` with $D_{weighted}$ instead of $D$
+   - All 2-swap and block move operators work unchanged
+   - Elementary landscape properties preserved
+
+4. **Deploy**:
+   - Store permutation $\varphi$ and its inverse
+   - At indexing: compute $c_i = h(x)$, write $c'_i = \varphi(c_i)$
+   - At query time: remap via $\varphi$, run standard radius expansion
+
+**Complexity**: With $K$ in the low thousands and sparse $w$ (only store edges with significant $w_{ij}$), evaluating $\Delta J$ for a swap uses only neighbors of $i$ and $j$.
+
+### Regularization (Optional)
+
+To preserve some LSH structure, we can regularize:
+
+\[
+J_\lambda(\varphi) = J(\varphi) + \lambda \sum_i d_H(\varphi(c_i), c_i)
+\]
+
+This penalizes deviation from the identity layout, controlling how aggressively we reshape the geometry. The parameter $\lambda$ trades off traffic optimization vs. preserving original encoder structure.
+
 ## Research and Experimental Program
 
 ### Phase I: Synthetic Landscapes
