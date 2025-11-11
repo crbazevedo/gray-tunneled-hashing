@@ -397,6 +397,14 @@ class GrayTunneledHasher:
         distance_metric: str = "cosine",
         use_real_embeddings_objective: bool = True,  # NEW: Use real embeddings objective (Sprint 8)
         sample_size_pairs: Optional[int] = None,  # NEW: Sample size for pairs in cost computation
+        # NEW (Sprint 9): Multi-radius objective
+        hamming_radii: Optional[list] = None,  # List of Hamming radii, e.g., [1, 2, 3]
+        radius_weights: Optional[np.ndarray] = None,  # Weights for each radius
+        # NEW (Sprint 9): Tunneling support
+        tunneling_on_stagnation: bool = False,  # Enable tunneling when stagnation detected
+        tunneling_probability: float = 0.0,  # Base probability for probabilistic tunneling
+        stagnation_window: int = 10,  # Iterations for stagnation detection
+        stagnation_threshold: float = 0.001,  # Relative improvement threshold
     ) -> "GrayTunneledHasher":
         """
         Fit with distribution-aware traffic weights.
@@ -504,7 +512,39 @@ class GrayTunneledHasher:
                 # Use new objective over real embeddings
                 from gray_tunneled_hashing.distribution.j_phi_objective import (
                     hill_climb_j_phi_real_embeddings,
+                    tunneling_step_j_phi,
+                    validate_radius_weights,
                 )
+                
+                # NEW (Sprint 9): Setup tunneling function if needed
+                tunneling_step_fn = None
+                if tunneling_on_stagnation or tunneling_probability > 0.0:
+                    # Create tunneling function with bound parameters
+                    # The signature expected by hill_climb_j_phi_real_embeddings:
+                    # tunneling_fn(perm, pi, w, queries, base_embeddings, ground_truth_neighbors,
+                    #              encoder, code_to_bucket, n_bits, radii, radius_weights, sample_size_pairs)
+                    def tunneling_fn(perm, pi_val, w_val, queries_val, base_embeddings_val,
+                                    ground_truth_neighbors_val, encoder_val, code_to_bucket_val,
+                                    n_bits_val, radii_inner, radius_weights_inner, sample_size_pairs_val):
+                        return tunneling_step_j_phi(
+                            perm, pi_val, w_val, queries_val, base_embeddings_val,
+                            ground_truth_neighbors_val, encoder_val, code_to_bucket_val,
+                            n_bits_val, radii_inner, radius_weights_inner, sample_size_pairs_val,
+                            block_size=self.block_size,
+                            num_blocks=10,
+                            random_state=None,  # Use different seed each time
+                        )
+                    
+                    tunneling_step_fn = tunneling_fn
+                
+                # NEW (Sprint 9): Validate and prepare radius weights
+                radii_to_use = hamming_radii
+                radius_weights_to_use = radius_weights
+                if hamming_radii is not None and len(hamming_radii) > 1:
+                    if radius_weights_to_use is None:
+                        radius_weights_to_use = validate_radius_weights(hamming_radii)
+                    else:
+                        radius_weights_to_use = validate_radius_weights(hamming_radii, radius_weights_to_use)
                 
                 if optimization_method == "hill_climb":
                     pi_optimized, cost, initial_cost, cost_history = hill_climb_j_phi_real_embeddings(
@@ -522,6 +562,15 @@ class GrayTunneledHasher:
                         random_state=self.random_state,
                         sample_size_pairs=sample_size_pairs,
                         verbose=self.track_history,
+                        # NEW (Sprint 9): Multi-radius support
+                        radii=radii_to_use,
+                        radius_weights=radius_weights_to_use,
+                        # NEW (Sprint 9): Tunneling support
+                        tunneling_on_stagnation=tunneling_on_stagnation,
+                        tunneling_probability=tunneling_probability,
+                        stagnation_window=stagnation_window,
+                        stagnation_threshold=stagnation_threshold,
+                        tunneling_step_fn=tunneling_step_fn,
                     )
                 else:
                     # For now, only hill_climb is supported with real embeddings objective

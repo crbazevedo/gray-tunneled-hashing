@@ -6,11 +6,17 @@ A novel binary hashing approach that optimizes the assignment of embeddings to b
 
 Gray-Tunneled Hashing (GTH) is a distribution-aware hashing method that treats binary code assignment as an explicit optimization problem. Unlike traditional approaches that assign codes via simple quantization, GTH optimizes the mapping to align Hamming distances in binary space with semantic distances in the original embedding space.
 
-### Key Results (Sprint 8)
+### Key Results
 
+**Sprint 8:**
 - **GTH outperforms baselines in 7/8 configurations** with recall improvements of **+15% to +91%**
 - Best configuration achieves **8.2% recall** vs **4.3% baseline** (+90.7% improvement)
 - Works particularly well with **Hyperplane LSH** (+61% to +91% improvements)
+
+**Sprint 9 (New):**
+- **Multi-radius objective**: Optimize J(φ) with multiple Hamming radii and constrained weights
+- **Adaptive tunneling**: Tunneling triggered by stagnation detection or probabilistically
+- **Investigation tools**: Scripts for analyzing J(φ) correlation, build time, and Hamming ball coverage
 
 ## 📚 Table of Contents
 
@@ -36,13 +42,21 @@ GTH solves a **Quadratic Assignment Problem (QAP)** where:
 
 **Objective Function (J(φ))**:
 
+Single-radius:
 ```
 J(φ) = Σ_{i,j} π_i · w_ij · E[d_H(φ(h(q)), φ(h(x))) | q∈bucket_i, x∈bucket_j]
+```
+
+Multi-radius (Sprint 9):
+```
+J(φ) = Σ_r w_r · J_r(φ)
+where J_r(φ) considers only pairs with d_H ≤ r
 ```
 
 where:
 - `π_i`: Query prior for bucket `i`
 - `w_ij`: Neighbor co-occurrence weight between buckets `i` and `j`
+- `w_r`: Weight for radius `r` (with constraint `w_1 > w_2 > ... > 0`)
 - `φ`: GTH permutation mapping bucket codes to optimized binary codes
 - `h`: LSH encoder mapping embeddings to bucket codes
 - `d_H`: Hamming distance
@@ -74,7 +88,10 @@ GTH uses **hill climbing with 2-swap moves** to minimize J(φ):
 
 1. **Initialization**: Random or identity permutation
 2. **Hill Climbing**: Iteratively swap bucket code assignments to reduce cost
-3. **Block Tunneling** (optional): Reoptimize small subsets to escape local minima
+3. **Block Tunneling** (Sprint 9): Adaptive tunneling triggered by:
+   - **Stagnation detection**: When improvement < threshold over N iterations
+   - **Probabilistic**: With probability `p` at each iteration
+   - Reoptimizes small subsets to escape local minima
 
 The 2-swap operator transposes the binary codes assigned to two buckets, with efficient delta computation to avoid full cost recalculation.
 
@@ -207,7 +224,7 @@ from gray_tunneled_hashing.binary.lsh_families import create_lsh_family
 # Create LSH encoder
 encoder = create_lsh_family("hyperplane", n_bits=8, dim=64, random_state=42)
 
-# Build index
+# Build index (Sprint 8)
 index = build_distribution_aware_index(
     base_embeddings=base_embeddings,  # Shape (N, dim)
     queries=queries,                   # Shape (Q, dim)
@@ -216,7 +233,25 @@ index = build_distribution_aware_index(
     n_bits=8,
     n_codes=32,
     max_two_swap_iters=20,
-    hamming_radius=1,
+)
+
+# Build index with Sprint 9 features (multi-radius + tunneling)
+index = build_distribution_aware_index(
+    base_embeddings=base_embeddings,
+    queries=queries,
+    ground_truth_neighbors=gt_neighbors,
+    encoder=encoder,
+    n_bits=8,
+    n_codes=32,
+    max_two_swap_iters=20,
+    # Sprint 9: Multi-radius objective
+    hamming_radii=[1, 2, 3],  # Optimize for multiple radii
+    radius_weights=None,  # Auto-generate: [1.0, 0.5, 0.25]
+    # Sprint 9: Adaptive tunneling
+    tunneling_on_stagnation=True,  # Enable tunneling when stagnant
+    tunneling_probability=0.1,  # 10% chance per iteration
+    stagnation_window=10,  # Check last 10 iterations
+    stagnation_threshold=0.001,  # 0.1% improvement threshold
 )
 
 # index contains:
@@ -262,6 +297,14 @@ hasher.fit_with_traffic(
     encoder=encoder,
     code_to_bucket=code_to_bucket,
     use_real_embeddings_objective=True,
+    # Sprint 9: Multi-radius objective
+    hamming_radii=[1, 2, 3],
+    radius_weights=None,  # Auto-generate weights
+    # Sprint 9: Adaptive tunneling
+    tunneling_on_stagnation=True,
+    tunneling_probability=0.1,
+    stagnation_window=10,
+    stagnation_threshold=0.001,
 )
 
 permutation = hasher.get_assignment()  # Shape (K, n_bits)
@@ -288,6 +331,7 @@ pip install -e .
 
 ### Running the Benchmark
 
+**Sprint 8 benchmark:**
 ```bash
 python scripts/run_sprint8_benchmark.py \
     --dataset synthetic \
@@ -299,12 +343,59 @@ python scripts/run_sprint8_benchmark.py \
     --output experiments/real/results_sprint8.json
 ```
 
+**Sprint 9 benchmark (with tunneling and multi-radius):**
+```bash
+python scripts/run_sprint8_benchmark.py \
+    --dataset synthetic \
+    --n-bits 6,8 \
+    --n-codes 16,32 \
+    --k 10 \
+    --hamming-radius 1,2 \
+    --max-iters 10,20 \
+    --hamming-radii 1,2,3 \
+    --tunneling-on-stagnation \
+    --tunneling-probability 0.1 \
+    --stagnation-window 10 \
+    --output experiments/real/results_sprint9.json
+```
+
 ### Analyzing Results
 
 ```bash
 python scripts/analyze_sprint8_benchmark_results.py \
     --input experiments/real/results_sprint8.json \
     --output experiments/real/reports/analysis.md
+```
+
+### Sprint 9 Investigation Tools
+
+**J(φ) Correlation Analysis:**
+```bash
+python scripts/investigate_jphi_correlation.py \
+    --benchmark-results experiments/real/results_sprint8.json \
+    --output-dir experiments/real/reports \
+    --generate-data
+```
+
+**Build Time Profiling:**
+```bash
+python scripts/profile_build_time.py \
+    --n-base 1000 \
+    --n-queries 100 \
+    --n-bits 8 \
+    --n-codes 32 \
+    --output-dir experiments/real/reports
+```
+
+**Hamming Ball Coverage Analysis:**
+```bash
+python scripts/analyze_hamming_ball_coverage.py \
+    --n-base 1000 \
+    --n-queries 100 \
+    --n-bits 8 \
+    --n-codes 32 \
+    --radii 1,2,3,4 \
+    --output-dir experiments/real/reports
 ```
 
 ### Basic Usage Example

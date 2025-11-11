@@ -96,6 +96,14 @@ def build_distribution_aware_index(
     random_state: Optional[int] = None,
     collapse_threshold: float = 0.01,
     lsh_family: Optional[Any] = None,
+    # NEW (Sprint 9): Multi-radius objective
+    hamming_radii: Optional[list] = None,  # List of Hamming radii, e.g., [1, 2, 3]
+    radius_weights: Optional[np.ndarray] = None,  # Weights for each radius
+    # NEW (Sprint 9): Tunneling support
+    tunneling_on_stagnation: bool = False,  # Enable tunneling when stagnation detected
+    tunneling_probability: float = 0.0,  # Base probability for probabilistic tunneling
+    stagnation_window: int = 10,  # Iterations for stagnation detection
+    stagnation_threshold: float = 0.001,  # Relative improvement threshold
 ) -> DistributionAwareIndex:
     """
     Build a distribution-aware Gray-Tunneled Hashing index.
@@ -242,6 +250,7 @@ def build_distribution_aware_index(
     # Fit with weighted distance matrix (use direct J(φ) optimization for guarantee)
     # NEW (Sprint 8): Pass queries, base_embeddings, ground_truth_neighbors, encoder, code_to_bucket
     # for real embeddings objective
+    # NEW (Sprint 9): Pass multi-radius and tunneling parameters
     hasher.fit_with_traffic(
         bucket_embeddings=bucket_embeddings,
         pi=pi,
@@ -254,6 +263,14 @@ def build_distribution_aware_index(
         use_semantic_distances=use_semantic_distances,
         optimize_j_phi_directly=True,  # Use direct optimization to guarantee J(φ*) ≤ J(φ₀)
         use_real_embeddings_objective=True,  # NEW: Use real embeddings objective by default
+        # NEW (Sprint 9): Multi-radius objective
+        hamming_radii=hamming_radii,
+        radius_weights=radius_weights,
+        # NEW (Sprint 9): Tunneling support
+        tunneling_on_stagnation=tunneling_on_stagnation,
+        tunneling_probability=tunneling_probability,
+        stagnation_window=stagnation_window,
+        stagnation_threshold=stagnation_threshold,
     )
     
     # Store traffic stats for later use

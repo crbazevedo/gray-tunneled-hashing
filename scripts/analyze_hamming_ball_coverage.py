@@ -1,59 +1,86 @@
 #!/usr/bin/env python3
 """
-Analyze Hamming ball coverage of ground truth neighbors.
+Analyze Hamming ball coverage for different radii.
 
-This script tests if Hamming ball expansion is working as expected.
+Tests radii 1, 2, 3, 4 and analyzes:
+- Coverage: |candidates| / |dataset|
+- Recall improvement vs baseline
+- Search time overhead
 """
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-import numpy as np
 import argparse
 import json
-from typing import Dict, List
-from collections import defaultdict
+import sys
+from pathlib import Path
+from typing import Dict, Any, List
+import numpy as np
+import time
 
-from gray_tunneled_hashing.binary.lsh_families import HyperplaneLSH
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from gray_tunneled_hashing.binary.lsh_families import create_lsh_family
 from gray_tunneled_hashing.distribution.pipeline import build_distribution_aware_index
-from gray_tunneled_hashing.evaluation.metrics import hamming_distance
 from gray_tunneled_hashing.api.query_pipeline import query_with_hamming_ball
-from gray_tunneled_hashing.data.synthetic_generators import generate_hypercube_vertices
+from gray_tunneled_hashing.evaluation.metrics import recall_at_k
+from gray_tunneled_hashing.data.synthetic_generators import generate_synthetic_dataset
 
 
-def analyze_hamming_ball_coverage(
-    permutation: np.ndarray,
-    index_obj: any,
-    base_embeddings: np.ndarray,
+def compute_baseline_recall(
     queries: np.ndarray,
+    base_embeddings: np.ndarray,
     ground_truth: np.ndarray,
+    lsh_encoder,
     k: int,
-    hamming_radius: int = 1,
-) -> Dict[str, any]:
-    """Analyze how many ground truth neighbors are within Hamming ball."""
-    vertices = generate_hypercube_vertices(index_obj.n_bits)
-    N = len(vertices)
-    K = len(index_obj.pi)
+    hamming_radius: int,
+) -> Dict[str, Any]:
+    """Compute baseline recall."""
+    query_codes = lsh_encoder(queries)
+    base_codes = lsh_encoder(base_embeddings)
     
-    # Map bucket to vertex
-    bucket_to_vertex = {}
-    for vertex_idx in range(N):
-        embedding_idx = permutation[vertex_idx]
-        if embedding_idx < K:
-            if embedding_idx not in bucket_to_vertex:
-                bucket_to_vertex[embedding_idx] = vertex_idx
+    start_time = time.time()
+    recalls = []
+    candidates_per_query = []
     
-    # Need to get encoder from context
-    # For now, recreate LSH
-    from gray_tunneled_hashing.binary.lsh_families import create_lsh_family
-    lsh = create_lsh_family("hyperplane", n_bits=index_obj.n_bits, dim=base_embeddings.shape[1], random_state=42)
-    query_codes = lsh.hash(queries)
-    base_codes_lsh = lsh.hash(base_embeddings)
+    for i in range(len(queries)):
+        query_code = query_codes[i]
+        hamming_dists = np.sum(query_code != base_codes, axis=1)
+        candidates = np.where(hamming_dists <= hamming_radius)[0]
+        candidates_per_query.append(len(candidates))
+        
+        if len(candidates) > 0:
+            retrieved = set(candidates[:k])
+            relevant = set(ground_truth[i][:k])
+            recall = len(retrieved & relevant) / len(relevant) if len(relevant) > 0 else 0.0
+            recalls.append(recall)
+        else:
+            recalls.append(0.0)
     
-    # Build bucket to dataset mapping
+    search_time = time.time() - start_time
+    
+    return {
+        "recall": float(np.mean(recalls)),
+        "search_time_s": float(search_time),
+        "avg_candidates": float(np.mean(candidates_per_query)),
+        "coverage": float(np.mean(candidates_per_query) / len(base_embeddings)),
+    }
+
+
+def analyze_coverage_for_radius(
+    queries: np.ndarray,
+    base_embeddings: np.ndarray,
+    ground_truth: np.ndarray,
+    index_obj,
+    lsh_encoder,
+    k: int,
+    hamming_radius: int,
+) -> Dict[str, Any]:
+    """Analyze coverage and recall for a specific Hamming radius."""
+    # Build bucket_to_dataset_indices
+    base_codes = lsh_encoder(base_embeddings)
     bucket_to_dataset_indices = {}
-    for dataset_idx, code in enumerate(base_codes_lsh):
+    for dataset_idx, code in enumerate(base_codes):
         code_tuple = tuple(code.astype(int).tolist())
         if code_tuple in index_obj.code_to_bucket:
             bucket_idx = index_obj.code_to_bucket[code_tuple]
@@ -61,172 +88,252 @@ def analyze_hamming_ball_coverage(
                 bucket_to_dataset_indices[bucket_idx] = []
             bucket_to_dataset_indices[bucket_idx].append(dataset_idx)
     
-    # Analyze coverage
-    coverage_stats = {
-        "total_queries": len(queries),
-        "total_gt_neighbors": 0,
-        "neighbors_in_ball": 0,
-        "neighbors_not_in_ball": 0,
-        "distance_distribution": defaultdict(int),
-        "queries_with_full_coverage": 0,
-        "queries_with_no_coverage": 0,
-    }
+    permutation = index_obj.hasher.get_assignment()
     
-    for query_idx, query_code in enumerate(query_codes):
-        code_tuple = tuple(query_code.astype(int).tolist())
-        if code_tuple not in index_obj.code_to_bucket:
-            continue
-        
-        query_bucket = index_obj.code_to_bucket[code_tuple]
-        
-        # Query with Hamming ball
+    start_time = time.time()
+    recalls = []
+    candidates_per_query = []
+    
+    for i, query in enumerate(queries):
         result = query_with_hamming_ball(
-            query_code=query_code,
+            query_embedding=query,
+            encoder=lsh_encoder,
             permutation=permutation,
             code_to_bucket=index_obj.code_to_bucket,
-            bucket_to_code=index_obj.bucket_to_code,
-            n_bits=index_obj.n_bits,
+            bucket_to_dataset_indices=bucket_to_dataset_indices,
             hamming_radius=hamming_radius,
         )
         
-        # Get retrieved dataset indices
-        retrieved_indices = set()
-        for bucket_idx in result.candidate_indices:
-            if bucket_idx in bucket_to_dataset_indices:
-                retrieved_indices.update(bucket_to_dataset_indices[bucket_idx])
+        candidates_per_query.append(len(result.candidate_indices))
         
-        # Check ground truth neighbors
-        gt_neighbors = set(ground_truth[query_idx][:k])
-        coverage_stats["total_gt_neighbors"] += len(gt_neighbors)
-        
-        in_ball = gt_neighbors & retrieved_indices
-        not_in_ball = gt_neighbors - retrieved_indices
-        
-        coverage_stats["neighbors_in_ball"] += len(in_ball)
-        coverage_stats["neighbors_not_in_ball"] += len(not_in_ball)
-        
-        if len(in_ball) == len(gt_neighbors):
-            coverage_stats["queries_with_full_coverage"] += 1
-        if len(in_ball) == 0:
-            coverage_stats["queries_with_no_coverage"] += 1
-        
-        # Compute distances for neighbors not in ball
-        if query_bucket in bucket_to_vertex:
-            query_vertex = bucket_to_vertex[query_bucket]
-            query_code_vertex = vertices[query_vertex]
-            
-            for neighbor_idx in not_in_ball:
-                neighbor_code = base_codes_lsh[neighbor_idx]
-                neighbor_code_tuple = tuple(neighbor_code.astype(int).tolist())
-                if neighbor_code_tuple in index_obj.code_to_bucket:
-                    neighbor_bucket = index_obj.code_to_bucket[neighbor_code_tuple]
-                    if neighbor_bucket in bucket_to_vertex:
-                        neighbor_vertex = bucket_to_vertex[neighbor_bucket]
-                        neighbor_code_vertex = vertices[neighbor_vertex]
-                        
-                        d_h = int(hamming_distance(
-                            query_code_vertex[np.newaxis, :],
-                            neighbor_code_vertex[np.newaxis, :]
-                        )[0, 0])
-                        coverage_stats["distance_distribution"][d_h] += 1
+        recall = recall_at_k(
+            retrieved_indices=result.candidate_indices[:k],
+            ground_truth_indices=ground_truth[i],
+            k=k,
+        )
+        recalls.append(recall)
     
-    # Compute coverage rate
-    coverage_rate = (
-        coverage_stats["neighbors_in_ball"] / coverage_stats["total_gt_neighbors"]
-        if coverage_stats["total_gt_neighbors"] > 0 else 0.0
-    )
+    search_time = time.time() - start_time
     
     return {
-        "coverage_rate": float(coverage_rate),
-        "stats": {
-            k: v if not isinstance(v, defaultdict) else dict(v)
-            for k, v in coverage_stats.items()
-        },
+        "recall": float(np.mean(recalls)),
+        "recall_std": float(np.std(recalls)),
+        "search_time_s": float(search_time),
+        "avg_search_time_ms": float(search_time / len(queries) * 1000),
+        "avg_candidates": float(np.mean(candidates_per_query)),
+        "coverage": float(np.mean(candidates_per_query) / len(base_embeddings)),
     }
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Analyze Hamming ball coverage")
-    parser.add_argument("--n-samples", type=int, default=1000, help="Number of base samples")
-    parser.add_argument("--n-queries", type=int, default=100, help="Number of queries")
-    parser.add_argument("--dim", type=int, default=128, help="Embedding dimension")
-    parser.add_argument("--n-bits", type=int, default=8, help="Number of bits")
-    parser.add_argument("--k", type=int, default=10, help="k for recall@k")
-    parser.add_argument("--hamming-radius", type=int, default=1, help="Hamming ball radius")
-    parser.add_argument("--random-state", type=int, default=42, help="Random seed")
-    parser.add_argument("--output", type=str, default="hamming_ball_coverage.json", help="Output file")
+def analyze_coverage(
+    base_embeddings: np.ndarray,
+    queries: np.ndarray,
+    ground_truth: np.ndarray,
+    n_bits: int,
+    n_codes: int,
+    radii: List[int],
+    k: int = 10,
+    random_state: int = 42,
+) -> Dict[str, Any]:
+    """Analyze coverage for multiple radii."""
+    lsh = create_lsh_family("hyperplane", n_bits=n_bits, dim=base_embeddings.shape[1], random_state=random_state)
     
-    args = parser.parse_args()
-    
-    # Generate synthetic data
-    np.random.seed(args.random_state)
-    base_embeddings = np.random.randn(args.n_samples, args.dim).astype(np.float32)
-    queries = np.random.randn(args.n_queries, args.dim).astype(np.float32)
-    
-    # Compute ground truth
-    from sklearn.metrics.pairwise import euclidean_distances
-    distances = euclidean_distances(queries, base_embeddings)
-    ground_truth = np.argsort(distances, axis=1)[:, :args.k]
-    
-    # Build distribution-aware index
+    # Build index
     print("Building distribution-aware index...")
-    from gray_tunneled_hashing.binary.lsh_families import create_lsh_family
-    lsh = create_lsh_family("hyperplane", n_bits=args.n_bits, dim=args.dim, random_state=args.random_state)
-    
+    build_start = time.time()
     index_obj = build_distribution_aware_index(
         base_embeddings=base_embeddings,
         queries=queries,
         ground_truth_neighbors=ground_truth,
         encoder=lsh.hash,
-        n_bits=args.n_bits,
-        lsh_family=lsh,
+        n_bits=n_bits,
+        n_codes=n_codes,
+        max_two_swap_iters=20,
+        random_state=random_state,
+    )
+    build_time = time.time() - build_start
+    
+    # Compute baseline for radius=1
+    baseline = compute_baseline_recall(
+        queries=queries,
+        base_embeddings=base_embeddings,
+        ground_truth=ground_truth,
+        lsh_encoder=lsh.hash,
+        k=k,
+        hamming_radius=1,
     )
     
-    # Get optimized permutation
-    if hasattr(index_obj, 'hasher') and index_obj.hasher is not None:
-        permutation = index_obj.hasher.get_assignment()
-    else:
-        N = 2 ** args.n_bits
-        K = index_obj.K
-        permutation = (np.arange(N, dtype=np.int32) % K).astype(np.int32)
+    # Analyze each radius
+    results = {}
+    for radius in radii:
+        print(f"Analyzing radius={radius}...")
+        result = analyze_coverage_for_radius(
+            queries=queries,
+            base_embeddings=base_embeddings,
+            ground_truth=ground_truth,
+            index_obj=index_obj,
+            lsh_encoder=lsh.hash,
+            k=k,
+            hamming_radius=radius,
+        )
+        
+        result["recall_improvement"] = result["recall"] - baseline["recall"]
+        result["relative_improvement_pct"] = (
+            (result["recall"] - baseline["recall"]) / baseline["recall"] * 100
+            if baseline["recall"] > 0 else 0.0
+        )
+        result["search_time_overhead"] = result["avg_search_time_ms"] - baseline.get("avg_search_time_ms", 0.0)
+        
+        results[f"radius_{radius}"] = result
+    
+    return {
+        "build_time_s": float(build_time),
+        "baseline": baseline,
+        "results": results,
+        "config": {
+            "n_bits": n_bits,
+            "n_codes": n_codes,
+            "k": k,
+            "n_base": len(base_embeddings),
+            "n_queries": len(queries),
+        },
+    }
+
+
+def generate_recommendations(analysis_results: Dict[str, Any]) -> List[str]:
+    """Generate radius recommendations based on analysis."""
+    results = analysis_results["results"]
+    recommendations = []
+    
+    # Find radius with best recall/coverage trade-off
+    best_radius = None
+    best_score = -np.inf
+    
+    for radius_key, result in results.items():
+        radius = int(radius_key.split("_")[1])
+        recall = result["recall"]
+        coverage = result["coverage"]
+        search_time = result["avg_search_time_ms"]
+        
+        # Score: recall / (search_time + 1) to balance recall and speed
+        score = recall / (search_time + 1.0)
+        
+        if score > best_score:
+            best_score = score
+            best_radius = radius
+    
+    if best_radius:
+        recommendations.append(f"Optimal radius: {best_radius} (best recall/speed trade-off)")
+    
+    # Check if larger radius significantly improves recall
+    radius_1 = results.get("radius_1", {})
+    radius_2 = results.get("radius_2", {})
+    radius_3 = results.get("radius_3", {})
+    radius_4 = results.get("radius_4", {})
+    
+    if radius_2 and radius_1:
+        improvement_2 = radius_2["recall"] - radius_1["recall"]
+        if improvement_2 > 0.05:  # 5% improvement
+            recommendations.append(f"Radius 2 provides {improvement_2:.1%} recall improvement over radius 1")
+    
+    if radius_3 and radius_2:
+        improvement_3 = radius_3["recall"] - radius_2["recall"]
+        if improvement_3 > 0.02:  # 2% improvement
+            recommendations.append(f"Radius 3 provides {improvement_3:.1%} recall improvement over radius 2")
+        elif improvement_3 < 0.01:
+            recommendations.append("Radius 3 provides minimal improvement - radius 2 may be sufficient")
+    
+    # Coverage recommendations
+    if radius_1 and radius_1["coverage"] < 0.1:
+        recommendations.append("Low coverage (<10%) with radius=1 - consider larger radius or adaptive strategy")
+    
+    return recommendations
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Analyze Hamming ball coverage for different radii")
+    parser.add_argument("--n-base", type=int, default=1000, help="Number of base embeddings")
+    parser.add_argument("--n-queries", type=int, default=100, help="Number of queries")
+    parser.add_argument("--n-bits", type=int, default=8, help="Number of bits")
+    parser.add_argument("--n-codes", type=int, default=32, help="Number of codes")
+    parser.add_argument("--k", type=int, default=10, help="k for recall@k")
+    parser.add_argument("--radii", type=str, default="1,2,3,4", help="Comma-separated list of radii")
+    parser.add_argument("--output-dir", type=str, default="experiments/real/reports", help="Output directory")
+    parser.add_argument("--random-state", type=int, default=42, help="Random seed")
+    
+    args = parser.parse_args()
+    
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Parse radii
+    radii = [int(x.strip()) for x in args.radii.split(",")]
+    
+    # Generate test data
+    print("Generating test data...")
+    base_embeddings, queries, ground_truth = generate_synthetic_dataset(
+        n_base=args.n_base,
+        n_queries=args.n_queries,
+        dim=64,
+        k=args.k,
+        random_state=args.random_state,
+    )
     
     # Analyze coverage
     print("Analyzing Hamming ball coverage...")
-    analysis = analyze_hamming_ball_coverage(
-        permutation=permutation,
-        index_obj=index_obj,
+    analysis_results = analyze_coverage(
         base_embeddings=base_embeddings,
         queries=queries,
         ground_truth=ground_truth,
+        n_bits=args.n_bits,
+        n_codes=args.n_codes,
+        radii=radii,
         k=args.k,
-        hamming_radius=args.hamming_radius,
+        random_state=args.random_state,
     )
     
+    # Generate recommendations
+    recommendations = generate_recommendations(analysis_results)
+    analysis_results["recommendations"] = recommendations
+    
     # Save results
-    output_dict = {
-        "configuration": {
-            "n_samples": args.n_samples,
-            "n_queries": args.n_queries,
-            "dim": args.dim,
-            "n_bits": args.n_bits,
-            "k": args.k,
-            "hamming_radius": args.hamming_radius,
-        },
-        "coverage_analysis": analysis,
-        "recommendations": {
-            "increase_radius": analysis["coverage_rate"] < 0.5,
-            "recommended_radius": args.hamming_radius + 1 if analysis["coverage_rate"] < 0.5 else args.hamming_radius,
-        },
-    }
+    json_path = output_dir / "hamming_ball_coverage_analysis.json"
+    with open(json_path, "w") as f:
+        json.dump(analysis_results, f, indent=2)
     
-    with open(args.output, "w") as f:
-        json.dump(output_dict, f, indent=2)
+    # Generate markdown report
+    md_path = output_dir / "HAMMING_BALL_COVERAGE_ANALYSIS.md"
+    with open(md_path, "w") as f:
+        f.write("# Hamming Ball Coverage Analysis\n\n")
+        f.write(f"**Build time**: {analysis_results['build_time_s']:.2f} seconds\n\n")
+        
+        f.write("## Baseline (LSH without GTH, radius=1)\n\n")
+        baseline = analysis_results["baseline"]
+        f.write(f"- Recall: {baseline['recall']:.4f}\n")
+        f.write(f"- Coverage: {baseline['coverage']:.2%}\n")
+        f.write(f"- Avg candidates: {baseline['avg_candidates']:.1f}\n\n")
+        
+        f.write("## Results by Radius\n\n")
+        f.write("| Radius | Recall | Coverage | Avg Candidates | Search Time (ms) | Improvement |\n")
+        f.write("|--------|--------|----------|----------------|------------------|-------------|\n")
+        
+        for radius_key in sorted(analysis_results["results"].keys()):
+            radius = int(radius_key.split("_")[1])
+            result = analysis_results["results"][radius_key]
+            f.write(f"| {radius} | {result['recall']:.4f} | {result['coverage']:.2%} | "
+                   f"{result['avg_candidates']:.1f} | {result['avg_search_time_ms']:.2f} | "
+                   f"{result['relative_improvement_pct']:+.1f}% |\n")
+        f.write("\n")
+        
+        f.write("## Recommendations\n\n")
+        for rec in recommendations:
+            f.write(f"- {rec}\n")
+        f.write("\n")
     
-    print(f"\nResults saved to {args.output}")
-    print(f"Coverage rate: {analysis['coverage_rate']:.4f}")
-    print(f"Neighbors in ball: {analysis['stats']['neighbors_in_ball']}/{analysis['stats']['total_gt_neighbors']}")
+    print(f"\n✓ Analysis complete. Reports saved to {output_dir}")
+    print(f"  - JSON: {json_path}")
+    print(f"  - Markdown: {md_path}")
 
 
 if __name__ == "__main__":
     main()
-

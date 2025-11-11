@@ -242,11 +242,19 @@ def run_gth_experiment_sprint8(
     num_tunneling_steps: int,
     mode: str,
     random_state: int,
+    # NEW (Sprint 9): Multi-radius and tunneling parameters
+    hamming_radii: Optional[List[int]] = None,
+    radius_weights: Optional[np.ndarray] = None,
+    tunneling_on_stagnation: bool = False,
+    tunneling_probability: float = 0.0,
+    stagnation_window: int = 10,
+    stagnation_threshold: float = 0.001,
 ) -> Dict[str, Any]:
     """Run GTH experiment with Sprint 8 structure."""
     lsh = create_lsh_family(lsh_family_name, n_bits=n_bits, dim=base_embeddings.shape[1], random_state=random_state)
     
     # Build distribution-aware index (Sprint 8 uses real embeddings objective by default)
+    # NEW (Sprint 9): Pass multi-radius and tunneling parameters
     build_start = time.time()
     index_obj = build_distribution_aware_index(
         base_embeddings=base_embeddings,
@@ -260,6 +268,14 @@ def run_gth_experiment_sprint8(
         num_tunneling_steps=num_tunneling_steps,
         mode=mode,
         random_state=random_state,
+        # NEW (Sprint 9): Multi-radius objective
+        hamming_radii=hamming_radii,
+        radius_weights=radius_weights,
+        # NEW (Sprint 9): Tunneling support
+        tunneling_on_stagnation=tunneling_on_stagnation,
+        tunneling_probability=tunneling_probability,
+        stagnation_window=stagnation_window,
+        stagnation_threshold=stagnation_threshold,
     )
     build_time = time.time() - build_start
     
@@ -334,6 +350,13 @@ def run_benchmark(
     n_runs: int,
     random_state: int,
     quick: bool = False,
+    # NEW (Sprint 9): Multi-radius and tunneling parameters
+    hamming_radii: Optional[List[int]] = None,
+    radius_weights: Optional[np.ndarray] = None,
+    tunneling_on_stagnation: bool = False,
+    tunneling_probability: float = 0.0,
+    stagnation_window: int = 10,
+    stagnation_threshold: float = 0.001,
 ) -> Dict[str, Any]:
     """Run complete benchmark."""
     print("=" * 80)
@@ -444,6 +467,13 @@ def run_benchmark(
                     num_tunneling_steps=tunneling_steps,
                     mode=mode,
                     random_state=random_state + run,
+                    # NEW (Sprint 9): Pass multi-radius and tunneling parameters
+                    hamming_radii=hamming_radii,
+                    radius_weights=radius_weights,
+                    tunneling_on_stagnation=tunneling_on_stagnation,
+                    tunneling_probability=tunneling_probability,
+                    stagnation_window=stagnation_window,
+                    stagnation_threshold=stagnation_threshold,
                 )
                 gth_results.append(result)
             except Exception as e:
@@ -516,6 +546,13 @@ def main():
     parser.add_argument("--random-state", type=int, default=42, help="Random seed")
     parser.add_argument("--output", type=str, default="experiments/real/results_sprint8_benchmark.json", help="Output JSON file")
     parser.add_argument("--quick", action="store_true", help="Quick mode (reduced configurations)")
+    # NEW (Sprint 9): Multi-radius objective
+    parser.add_argument("--hamming-radii", type=str, default=None, help="Comma-separated list of Hamming radii for multi-radius objective, e.g., '1,2,3'")
+    # NEW (Sprint 9): Tunneling parameters
+    parser.add_argument("--tunneling-on-stagnation", action="store_true", help="Enable tunneling when stagnation detected")
+    parser.add_argument("--tunneling-probability", type=float, default=0.0, help="Base probability for probabilistic tunneling (0.0 to 1.0)")
+    parser.add_argument("--stagnation-window", type=int, default=10, help="Number of iterations for stagnation detection")
+    parser.add_argument("--stagnation-threshold", type=float, default=0.001, help="Relative improvement threshold for stagnation (default: 0.001 = 0.1%%)")
     
     args = parser.parse_args()
     
@@ -527,6 +564,16 @@ def main():
     max_iters_list = parse_list_arg(args.max_iters)
     tunneling_steps_list = parse_list_arg(args.tunneling_steps)
     mode_list = parse_list_arg(args.mode, dtype=str)
+    
+    # NEW (Sprint 9): Parse multi-radius argument
+    hamming_radii = None
+    if args.hamming_radii:
+        hamming_radii = parse_list_arg(args.hamming_radii)
+        # Validate and generate weights if needed
+        from gray_tunneled_hashing.distribution.j_phi_objective import validate_radius_weights
+        radius_weights = validate_radius_weights(hamming_radii)
+    else:
+        radius_weights = None
     
     if args.quick:
         # Reduce configurations for quick mode
@@ -562,6 +609,13 @@ def main():
         n_runs=args.n_runs,
         random_state=args.random_state,
         quick=args.quick,
+        # NEW (Sprint 9): Pass multi-radius and tunneling parameters
+        hamming_radii=hamming_radii,
+        radius_weights=radius_weights,
+        tunneling_on_stagnation=args.tunneling_on_stagnation,
+        tunneling_probability=args.tunneling_probability,
+        stagnation_window=args.stagnation_window,
+        stagnation_threshold=args.stagnation_threshold,
     )
     
     # Save results
